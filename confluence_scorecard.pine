@@ -8,12 +8,16 @@ indicator("Confluence Scorecard", shorttitle = "CONF-SCORE", overlay = true, max
 // 2) BUY when the score reaches the minimum score from below, SELL when it reaches minus the minimum from
 //    above; by default they alternate. Each label carries every vote in its tooltip. An optional safeguard
 //    waits for a later close beyond the signal bar's high or low.
-// 3) Context layers, each with its own switch: four moving averages, a Bollinger area, trend candles, ADX dots,
+// 3) Every signal (every confirmed one, with the safeguard on) opens a hypothetical trade with three targets and
+//    a stop. The scorecard counts how often TP1, TP2, TP3 and the stop were reached within H bars, and compares
+//    the TP1 rate, with a Wilson 95% interval, against the same TP1, stop and horizon applied to every closed
+//    bar: the base rate.
+// 4) Context layers, each with its own switch: four moving averages, a Bollinger area, trend candles, ADX dots,
 //    an auto Fibonacci retracement, floor pivots from a higher timeframe, two sets of swing support and
 //    resistance (chart timeframe and a higher timeframe) that flip role on a break, a multi-timeframe trend
 //    card and a fixed-range volume profile.
-// Votes, signals, dots, candle colors and levels are set on closed bars only, and every request.security call
-// returns the last completed bar of the requested timeframe.
+// Votes, signals, trades, dots, candle colors and levels change only on closed bars, and every request.security
+// call returns the last completed bar of the requested timeframe.
 
 // ───────────────────────── Inputs ─────────────────────────
 const string gMa = "Moving averages"
@@ -27,6 +31,8 @@ const string gMtf = "Trend card"
 const string gVp = "Volume profile"
 const string gEng = "Signal engine"
 const string gSafe = "Safeguard"
+const string gTp = "Take profits and stop"
+const string gCard = "Scorecard"
 const string gAlert = "Alerts"
 const string gDisp = "Display"
 
@@ -103,6 +109,22 @@ divWindow = input.int(10, "Divergence window (vote 6)", minval = 1, maxval = 100
 sgOn = input.bool(false, "Use safeguard", group = gSafe, tooltip = "A signal is confirmed by the first closed bar among the next N bars that closes above the signal bar's high (BUY) or below its low (SELL) while the score still reaches minimum score - 1 in the signal's direction. When on, the take profits, the stop and the scorecard start at the confirmation close, and a signal that is not confirmed opens no trade.")
 sgBars = input.int(3, "Confirmation window (bars)", minval = 1, maxval = 50, group = gSafe)
 
+tpMode = input.string("Percent", "Mode", options = ["Percent", "ATR multiple"], group = gTp, tooltip = "Distances from the entry, which is the close of the signal bar, or of the confirmation bar with the safeguard on. Percent: a share of the entry. ATR multiple: multiples of ta.atr(length) on the entry bar. Keep TP1 < TP2 < TP3.")
+tp1Pct = input.float(1.0, "TP1 %", minval = 0.01, maxval = 50, step = 0.1, inline = "pct1", group = gTp)
+tp2Pct = input.float(2.0, "TP2 %", minval = 0.01, maxval = 50, step = 0.1, inline = "pct1", group = gTp)
+tp3Pct = input.float(3.0, "TP3 %", minval = 0.01, maxval = 50, step = 0.1, inline = "pct2", group = gTp)
+slPct = input.float(1.5, "Stop %", minval = 0.01, maxval = 50, step = 0.1, inline = "pct2", group = gTp)
+atrLen = input.int(14, "ATR length", minval = 1, group = gTp)
+tp1Atr = input.float(1.0, "TP1 x ATR", minval = 0.01, step = 0.1, inline = "atr1", group = gTp)
+tp2Atr = input.float(2.0, "TP2 x ATR", minval = 0.01, step = 0.1, inline = "atr1", group = gTp)
+tp3Atr = input.float(3.0, "TP3 x ATR", minval = 0.01, step = 0.1, inline = "atr2", group = gTp)
+slAtr = input.float(1.5, "Stop x ATR", minval = 0.01, step = 0.1, inline = "atr2", group = gTp)
+horizon = input.int(50, "Horizon H (bars)", minval = 1, maxval = 200, group = gTp, tooltip = "A trade that has reached neither the stop nor TP3 after H bars ends as a timeout on that bar.")
+tpLinesOn = input.bool(true, "Draw levels", group = gTp, tooltip = "Entry, TP1-TP3 and stop lines from the entry bar until the stop, TP3, the next opposite BUY/SELL label or the horizon, whichever comes first, with a mark on the bar that reaches each level.")
+tpKeep = input.int(20, "Trades drawn", minval = 1, maxval = 30, group = gTp, tooltip = "Only the last N trades keep their lines and marks. The scorecard counts every trade either way.")
+
+scOn = input.bool(true, "Show scorecard", group = gCard)
+
 alertMode = input.string("Signals only", "alert() calls", options = ["Signals only", "Every bar close"], group = gAlert, tooltip = "For an alert set on 'Any alert() function call'. Signals only: on the closed bars with a BUY, a SELL or a safeguard confirmation. Every bar close: on every closed bar. Each message carries the score and the seven votes.")
 
 textSize = input.string("Small", "Table text size", options = ["Tiny", "Small", "Normal"], group = gDisp)
@@ -118,6 +140,25 @@ type Level
     string note
     line ln
     label lb
+
+// A hypothetical trade opened by a signal. hits: the highest target reached before the stop, 0 to 3. drawn:
+// its lines still extend. Its lines and marks are deleted once tpKeep newer trades have been drawn.
+type Trade
+    int dir
+    int bar
+    float entry
+    float tp1
+    float tp2
+    float tp3
+    float sl
+    int hits = 0
+    bool drawn = false
+    line lnEntry
+    line lnTp1
+    line lnTp2
+    line lnTp3
+    line lnSl
+    array<label> marks
 
 // ───────────────────────── History buffers ─────────────────────────
 // The volume profile and the Fibonacci drawing read up to 500 bars back on the last bar only. The runtime
@@ -139,6 +180,7 @@ float fibHi = ta.highest(high, fibLen)
 float fibLo = ta.lowest(low, fibLen)
 int fibHiOff = ta.highestbars(high, fibLen)
 int fibLoOff = ta.lowestbars(low, fibLen)
+float atr = ta.atr(atrLen)
 
 color upCol = #26a69a
 color dnCol = #ef5350
@@ -268,10 +310,11 @@ checkBreaks(array<Level> arr, float c) =>
             Level lv = array.get(arr, i)
             if (lv.role == -1 and c > lv.price) or (lv.role == 1 and c < lv.price)
                 lv.breaks += 1
+                // Both branches end with a void call, so the if, the function's last statement, has one type.
                 if lv.breaks >= 2
+                    array.remove(arr, i)
                     line.delete(lv.ln)
                     label.delete(lv.lb)
-                    array.remove(arr, i)
                 else
                     lv.role := -lv.role
                     color col = levelColor(lv.role)
@@ -402,9 +445,9 @@ int v7 = fibRng > 0 and fibUp and close <= fibHi - 0.5 * fibRng and close >= fib
 
 int score = v1 + v2 + v3 + v4 + v5 + v6 + v7
 
-// Signals start once the bar index reaches the longest of the three engine EMAs and the ADX, the momentum and
-// the RSI have values.
-bool ready = bar_index >= math.max(ma1Len, ma2Len, ma3Len) and not na(adx) and not na(mom) and not na(rsi)
+// Signals and the base rate start once the bar index reaches the longest of the three engine EMAs and the ADX,
+// the momentum, the RSI and the ATR have values.
+bool ready = bar_index >= math.max(ma1Len, ma2Len, ma3Len) and not na(adx) and not na(mom) and not na(rsi) and not na(atr)
 
 fmtVote(int v) =>
     v > 0 ? "+1" : v < 0 ? "-1" : "0"
@@ -505,6 +548,227 @@ if buySig or sellSig
         trimLabels(sigLabels, sigKeep)
     pendLabel := lb
     pendTip := tip
+
+// ───────────────────────── Trades ─────────────────────────
+// The three targets and the stop of a trade in direction d from entry e, with the ATR a of the entry bar.
+levelsOf(int d, float e, float a) =>
+    bool pct = tpMode == "Percent"
+    float k1 = pct ? e * tp1Pct / 100 : tp1Atr * a
+    float k2 = pct ? e * tp2Pct / 100 : tp2Atr * a
+    float k3 = pct ? e * tp3Pct / 100 : tp3Atr * a
+    float ks = pct ? e * slPct / 100 : slAtr * a
+    [e + d * k1, e + d * k2, e + d * k3, e - d * ks]
+
+// Target k (1 to 3) of a trade.
+targetOf(Trade t, int k) =>
+    k == 1 ? t.tp1 : k == 2 ? t.tp2 : t.tp3
+
+// True when price p is at or beyond the target x of a trade in direction d.
+reaches(int d, float p, float x) =>
+    d == 1 ? p >= x : p <= x
+
+// True when price p is at or beyond the stop s of a trade in direction d.
+stopsAt(int d, float p, float s) =>
+    d == 1 ? p <= s : p >= s
+
+// Advances an open signal trade by the current closed bar and returns [stopped, ambiguous]. Same rules as
+// intrabar-ambiguity's ledger:
+// 1) An open at or beyond the stop: stopped, the stop came first.
+// 2) Targets the open already reached are credited: the open is the bar's first price. TP3 ends the trade.
+// 3) The high (long) or the low (short) may reach further targets and the other extreme the stop. A stop and a
+//    further target inside the same bar cannot be ordered from OHLC: the bar counts as a stop, the further
+//    target is not credited, and the trade is flagged ambiguous.
+stepTrade(Trade t) =>
+    bool stopped = false
+    bool amb = false
+    if stopsAt(t.dir, open, t.sl)
+        stopped := true
+    else
+        while t.hits < 3 and reaches(t.dir, open, targetOf(t, t.hits + 1))
+            t.hits += 1
+        if t.hits < 3
+            int reach = t.hits
+            float ext = t.dir == 1 ? high : low
+            while reach < 3 and reaches(t.dir, ext, targetOf(t, reach + 1))
+                reach += 1
+            if stopsAt(t.dir, t.dir == 1 ? low : high, t.sl)
+                stopped := true
+                amb := reach > t.hits
+            else
+                t.hits := reach
+    [stopped, amb]
+
+newLine(float y, color c, string st) =>
+    line.new(bar_index, y, bar_index, y, color = c, style = st, width = 1)
+
+extendTrade(Trade t) =>
+    line.set_x2(t.lnEntry, bar_index)
+    line.set_x2(t.lnTp1, bar_index)
+    line.set_x2(t.lnTp2, bar_index)
+    line.set_x2(t.lnTp3, bar_index)
+    line.set_x2(t.lnSl, bar_index)
+
+deleteDrawing(Trade t) =>
+    line.delete(t.lnEntry)
+    line.delete(t.lnTp1)
+    line.delete(t.lnTp2)
+    line.delete(t.lnTp3)
+    line.delete(t.lnSl)
+    for lb in t.marks
+        label.delete(lb)
+    array.clear(t.marks)
+    t.drawn := false
+
+markTrade(Trade t, float y, string txt, color c, string tip) =>
+    array.push(t.marks, label.new(bar_index, y, txt, style = label.style_label_left, color = color.new(c, 15), textcolor = color.white, size = size.tiny, tooltip = tip))
+
+// Open signal trades and the drawn ones, oldest first.
+var array<Trade> openTrades = array.new<Trade>()
+var array<Trade> drawnTrades = array.new<Trade>()
+
+// Signal trades that have ended, per direction (index 0 long, 1 short): count, TP1, TP2 and TP3 reached, stops,
+// timeouts, and stops on an ambiguous bar.
+var array<int> sN = array.new<int>(2, 0)
+var array<int> sTp1 = array.new<int>(2, 0)
+var array<int> sTp2 = array.new<int>(2, 0)
+var array<int> sTp3 = array.new<int>(2, 0)
+var array<int> sStop = array.new<int>(2, 0)
+var array<int> sTime = array.new<int>(2, 0)
+var array<int> sAmb = array.new<int>(2, 0)
+
+// ───────────────────────── Base rate ─────────────────────────
+// The same TP1, stop and horizon applied to every closed bar from the first ready one, as a long and as a short
+// entry at its close. Each bar opens one trade per direction and each lives at most H bars, so at most H are
+// open per direction.
+var array<int> bN = array.new<int>(2, 0)
+var array<int> bTp1 = array.new<int>(2, 0)
+var array<int> bStop = array.new<int>(2, 0)
+var array<int> bTime = array.new<int>(2, 0)
+var array<int> bAmb = array.new<int>(2, 0)
+var array<int> blBarL = array.new<int>()
+var array<float> blTpL = array.new<float>()
+var array<float> blSlL = array.new<float>()
+var array<int> blBarS = array.new<int>()
+var array<float> blTpS = array.new<float>()
+var array<float> blSlS = array.new<float>()
+
+// Advances every open base-rate trade of direction d by this closed bar with the rules of stepTrade(), TP1
+// only, and counts the ones that end. An ended trade is removed by moving the last element into its slot,
+// which is safe because the loop runs backwards and that element has already been stepped on this bar.
+stepBase(int d, array<int> bars, array<float> tps, array<float> sls, int di) =>
+    int n = array.size(bars)
+    if n > 0
+        for i = n - 1 to 0
+            float tp = array.get(tps, i)
+            float sl = array.get(sls, i)
+            int outcome = 0
+            bool amb = false
+            if stopsAt(d, open, sl)
+                outcome := -1
+            else if reaches(d, open, tp)
+                outcome := 1
+            else
+                bool slHit = stopsAt(d, d == 1 ? low : high, sl)
+                bool tpHit = reaches(d, d == 1 ? high : low, tp)
+                if slHit
+                    amb := tpHit
+                    outcome := -1
+                else if tpHit
+                    outcome := 1
+            if outcome == 0 and bar_index - array.get(bars, i) >= horizon
+                outcome := 2
+            if outcome != 0
+                array.set(bN, di, array.get(bN, di) + 1)
+                if outcome == 1
+                    array.set(bTp1, di, array.get(bTp1, di) + 1)
+                else if outcome == -1
+                    array.set(bStop, di, array.get(bStop, di) + 1)
+                    if amb
+                        array.set(bAmb, di, array.get(bAmb, di) + 1)
+                else
+                    array.set(bTime, di, array.get(bTime, di) + 1)
+                int lastIdx = array.size(bars) - 1
+                array.set(bars, i, array.get(bars, lastIdx))
+                array.set(tps, i, array.get(tps, lastIdx))
+                array.set(sls, i, array.get(sls, lastIdx))
+                array.pop(bars)
+                array.pop(tps)
+                array.pop(sls)
+
+// One step per closed bar, in this order: the open signal trades take this bar; a new BUY or SELL ends the
+// drawing of the trades on the other side; a new trade opens at this close; then the base-rate trades take this
+// bar and two new ones open at this close. A trade is never checked on its own entry bar.
+if barstate.isconfirmed
+    int n = array.size(openTrades)
+    if n > 0
+        for i = n - 1 to 0
+            Trade t = array.get(openTrades, i)
+            int before = t.hits
+            [stopped, amb] = stepTrade(t)
+            bool timedOut = not stopped and t.hits < 3 and bar_index - t.bar >= horizon
+            bool done = stopped or t.hits == 3 or timedOut
+            if t.drawn
+                extendTrade(t)
+                if t.hits > before
+                    for k = before + 1 to t.hits
+                        markTrade(t, targetOf(t, k), "TP" + str.tostring(k), upCol, "TP" + str.tostring(k) + " reached, " + str.tostring(bar_index - t.bar) + " bars after the entry.")
+                if stopped
+                    markTrade(t, t.sl, amb ? "SL*" : "SL", dnCol, amb ? "Stop and a further target inside this bar: the order is unknown, so it counts as a stop (ambiguous)." : "Stop reached, " + str.tostring(bar_index - t.bar) + " bars after the entry.")
+                if done
+                    t.drawn := false
+            if done
+                int di = t.dir == 1 ? 0 : 1
+                array.set(sN, di, array.get(sN, di) + 1)
+                if t.hits >= 1
+                    array.set(sTp1, di, array.get(sTp1, di) + 1)
+                if t.hits >= 2
+                    array.set(sTp2, di, array.get(sTp2, di) + 1)
+                if t.hits >= 3
+                    array.set(sTp3, di, array.get(sTp3, di) + 1)
+                if stopped
+                    array.set(sStop, di, array.get(sStop, di) + 1)
+                if amb
+                    array.set(sAmb, di, array.get(sAmb, di) + 1)
+                if timedOut
+                    array.set(sTime, di, array.get(sTime, di) + 1)
+                array.remove(openTrades, i)
+
+    if buySig or sellSig
+        int sd = buySig ? 1 : -1
+        for t in drawnTrades
+            if t.drawn and t.dir == -sd
+                t.drawn := false
+
+    // Entry at the close of the signal bar, or of the confirmation bar with the safeguard on.
+    bool openLong = sgOn ? buyConf : buySig
+    bool openShort = sgOn ? sellConf : sellSig
+    if openLong or openShort
+        int d = openLong ? 1 : -1
+        [l1, l2, l3, ls] = levelsOf(d, close, atr)
+        Trade t = Trade.new(dir = d, bar = bar_index, entry = close, tp1 = l1, tp2 = l2, tp3 = l3, sl = ls, marks = array.new<label>())
+        array.push(openTrades, t)
+        if tpLinesOn
+            t.lnEntry := newLine(close, color.new(color.gray, 20), line.style_dotted)
+            t.lnTp1 := newLine(l1, color.new(upCol, 30), line.style_dashed)
+            t.lnTp2 := newLine(l2, color.new(upCol, 30), line.style_dashed)
+            t.lnTp3 := newLine(l3, color.new(upCol, 30), line.style_dashed)
+            t.lnSl := newLine(ls, color.new(dnCol, 30), line.style_dashed)
+            t.drawn := true
+            array.push(drawnTrades, t)
+            if array.size(drawnTrades) > tpKeep
+                deleteDrawing(array.shift(drawnTrades))
+
+    stepBase(1, blBarL, blTpL, blSlL, 0)
+    stepBase(-1, blBarS, blTpS, blSlS, 1)
+    if ready
+        [bl1, bl2, bl3, bls] = levelsOf(1, close, atr)
+        array.push(blBarL, bar_index)
+        array.push(blTpL, bl1)
+        array.push(blSlL, bls)
+        [bs1, bs2, bs3, bss] = levelsOf(-1, close, atr)
+        array.push(blBarS, bar_index)
+        array.push(blTpS, bs1)
+        array.push(blSlS, bss)
 
 // ───────────────────────── Last-bar drawings ─────────────────────────
 // The Fibonacci levels and the volume profile are redrawn on the last bar of the chart from closed bars only:
@@ -655,6 +919,114 @@ if barstate.islast and mtfOn
     cardCell(0, 6, "Score", hdrBg, text.align_left)
     cardCell(1, 6, fmtScore(lastScore) + " / 7", lastScore >= minScore ? upBg : lastScore <= -minScore ? dnBg : na)
     cardCell(2, 6, "signal at " + str.tostring(minScore))
+
+// ───────────────────────── Scorecard ─────────────────────────
+goodBg = color.from_gradient(0.40, 0.0, 1.0, chart.bg_color, color.green)
+
+// Eleven columns: the row names and ten values. Eight rows: header, column titles, three signal rows, two
+// base-rate rows, footer.
+var table sc = table.new(position.bottom_right, 11, 8, border_width = 1)
+
+scCell(int col, int row, string txt, color bg = na, string align = text.align_center) =>
+    table.cell(sc, col, row, txt, text_color = chart.fg_color, text_size = tSize, text_halign = align, bgcolor = na(bg) ? cellBg : bg)
+
+// "48.3%" from a rate in [0, 1], "n/a" when there is none.
+fmtRate(float r) =>
+    na(r) ? "n/a" : str.tostring(r * 100, "0.0") + "%"
+
+// k / n as a rate, "n/a" when n is 0.
+fmtShare(int k, int n) =>
+    n > 0 ? fmtRate(float(k) / n) : "n/a"
+
+// "+1.2 pts" or "-1.2 pts" from a signed difference in percentage points, "n/a" when there is none.
+fmtPts(float v) =>
+    na(v) ? "n/a" : (v > 0 ? "+" : "") + str.tostring(v, "0.0") + " pts"
+
+// Wilson score interval at 95% (z = 1.96) for k successes in n trials: [lower, upper], na when n is 0.
+wilson(int k, int n) =>
+    float lo = na
+    float hi = na
+    if n > 0
+        float z = 1.96
+        float p = float(k) / n
+        float den = 1 + z * z / n
+        float ctr = (p + z * z / (2.0 * n)) / den
+        float half = z * math.sqrt(p * (1 - p) / n + z * z / (4.0 * n * n)) / den
+        lo := ctr - half
+        hi := ctr + half
+    [lo, hi]
+
+// One signal row. base is the base rate its TP1 rate is compared with: "evidence" only when the lower bound of
+// the TP1 interval is above it.
+sigRow(int row, string name, int n, int t1, int t2, int t3, int st, int tm, int am, float base) =>
+    [lo, hi] = wilson(t1, n)
+    float p = n > 0 ? float(t1) / n : float(na)
+    bool ev = n > 0 and not na(base) and lo > base
+    scCell(0, row, name, na, text.align_left)
+    scCell(1, row, str.tostring(n, "#,##0"))
+    scCell(2, row, fmtShare(t1, n))
+    scCell(3, row, fmtShare(t2, n))
+    scCell(4, row, fmtShare(t3, n))
+    scCell(5, row, fmtShare(st, n))
+    scCell(6, row, str.tostring(tm, "#,##0"))
+    scCell(7, row, str.tostring(am, "#,##0"))
+    scCell(8, row, n > 0 ? fmtRate(lo) + " - " + fmtRate(hi) : "n/a")
+    scCell(9, row, na(p) or na(base) ? "n/a" : fmtPts((p - base) * 100))
+    scCell(10, row, ev ? "evidence" : "no evidence", ev ? goodBg : na)
+
+// One base-rate row: TP1 only, so the TP2, TP3, edge and verdict cells stay empty.
+baseRow(int row, string name, int n, int t1, int st, int tm, int am) =>
+    [lo, hi] = wilson(t1, n)
+    scCell(0, row, name, na, text.align_left)
+    scCell(1, row, str.tostring(n, "#,##0"))
+    scCell(2, row, fmtShare(t1, n))
+    scCell(3, row, "-")
+    scCell(4, row, "-")
+    scCell(5, row, fmtShare(st, n))
+    scCell(6, row, str.tostring(tm, "#,##0"))
+    scCell(7, row, str.tostring(am, "#,##0"))
+    scCell(8, row, n > 0 ? fmtRate(lo) + " - " + fmtRate(hi) : "n/a")
+    scCell(9, row, "")
+    scCell(10, row, "")
+
+// Merged rows are merged once: merging cells that are already merged on every realtime tick is avoided.
+var bool scMerged = false
+
+if barstate.islast and scOn
+    int nL = array.get(sN, 0)
+    int nS = array.get(sN, 1)
+    int bNL = array.get(bN, 0)
+    int bNS = array.get(bN, 1)
+    float baseL = bNL > 0 ? float(array.get(bTp1, 0)) / bNL : float(na)
+    float baseS = bNS > 0 ? float(array.get(bTp1, 1)) / bNS : float(na)
+    // All signals are compared with the base rate weighted by their own mix of longs and shorts.
+    float baseAll = nL + nS > 0 and not na(baseL) and not na(baseS) ? (nL * baseL + nS * baseS) / (nL + nS) : float(na)
+    string levelsTxt = tpMode == "Percent" ? "TP " + str.tostring(tp1Pct, "0.##") + "/" + str.tostring(tp2Pct, "0.##") + "/" + str.tostring(tp3Pct, "0.##") + "%, stop " + str.tostring(slPct, "0.##") + "%" : "TP " + str.tostring(tp1Atr, "0.##") + "/" + str.tostring(tp2Atr, "0.##") + "/" + str.tostring(tp3Atr, "0.##") + " x ATR " + str.tostring(atrLen) + ", stop " + str.tostring(slAtr, "0.##") + " x ATR"
+    scCell(0, 0, "Scorecard · " + ticker.standard(syminfo.tickerid) + " · " + timeframe.period + " · " + levelsTxt + " · horizon " + str.tostring(horizon) + " bars · " + (sgOn ? "safeguard on, confirmed signals only · " : "") + "before costs", hdrBg, text.align_left)
+    scCell(0, 1, "", hdrBg)
+    scCell(1, 1, "N", hdrBg)
+    scCell(2, 1, "TP1", hdrBg)
+    scCell(3, 1, "TP2", hdrBg)
+    scCell(4, 1, "TP3", hdrBg)
+    scCell(5, 1, "Stop", hdrBg)
+    scCell(6, 1, "Timeouts", hdrBg)
+    scCell(7, 1, "Ambiguous", hdrBg)
+    scCell(8, 1, "TP1 95% CI", hdrBg)
+    scCell(9, 1, "Edge vs base", hdrBg)
+    scCell(10, 1, "Verdict", hdrBg)
+    sigRow(2, "Long signals", nL, array.get(sTp1, 0), array.get(sTp2, 0), array.get(sTp3, 0), array.get(sStop, 0), array.get(sTime, 0), array.get(sAmb, 0), baseL)
+    sigRow(3, "Short signals", nS, array.get(sTp1, 1), array.get(sTp2, 1), array.get(sTp3, 1), array.get(sStop, 1), array.get(sTime, 1), array.get(sAmb, 1), baseS)
+    sigRow(4, "All signals", nL + nS, array.get(sTp1, 0) + array.get(sTp1, 1), array.get(sTp2, 0) + array.get(sTp2, 1), array.get(sTp3, 0) + array.get(sTp3, 1), array.get(sStop, 0) + array.get(sStop, 1), array.get(sTime, 0) + array.get(sTime, 1), array.get(sAmb, 0) + array.get(sAmb, 1), baseAll)
+    baseRow(5, "Base rate, long, every bar", bNL, array.get(bTp1, 0), array.get(bStop, 0), array.get(bTime, 0), array.get(bAmb, 0))
+    baseRow(6, "Base rate, short, every bar", bNS, array.get(bTp1, 1), array.get(bStop, 1), array.get(bTime, 1), array.get(bAmb, 1))
+    scCell(0, 7, "Closed bars only. A trade ends at the stop, TP3 or after the horizon; a stop and a target inside one bar count as a stop (ambiguous). Not counted yet: " + str.tostring(array.size(openTrades)) + " open signal trades, " + str.tostring(array.size(blBarL) + array.size(blBarS)) + " open base-rate trades. Not advice.", hdrBg, text.align_left)
+    for c = 1 to 10
+        scCell(c, 0, "", hdrBg)
+        scCell(c, 7, "", hdrBg)
+    if not scMerged
+        table.merge_cells(sc, 0, 0, 10, 0)
+        table.merge_cells(sc, 0, 7, 10, 7)
+        scMerged := true
 
 // ───────────────────────── Alerts ─────────────────────────
 // The conditions are set on closed bars only, so each fires once, at the bar's close.
