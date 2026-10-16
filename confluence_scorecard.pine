@@ -1,0 +1,444 @@
+//@version=6
+indicator("Confluence Scorecard", shorttitle = "CONF-SCORE", overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
+
+// Confluence Scorecard
+// Context layers, each with its own switch: four moving averages, a Bollinger area, trend candles, ADX dots,
+// an auto Fibonacci retracement, floor pivots from a higher timeframe, two sets of swing support and
+// resistance (chart timeframe and a higher timeframe) that flip role on a break, a multi-timeframe trend card
+// and a fixed-range volume profile.
+// Dots, candle colors and levels are set on closed bars only, and every request.security call returns the
+// last completed bar of the requested timeframe.
+
+// ───────────────────────── Inputs ─────────────────────────
+const string gMa = "Moving averages"
+const string gBb = "Bollinger area"
+const string gTrend = "Trend candles and ADX"
+const string gFib = "Auto Fibonacci"
+const string gPiv = "Floor pivots"
+const string gSr = "Support and resistance"
+const string gHtf = "Higher timeframe"
+const string gMtf = "Trend card"
+const string gVp = "Volume profile"
+const string gDisp = "Display"
+
+ma1On = input.bool(true, "MA 1", inline = "ma1", group = gMa)
+ma1Type = input.string("EMA", "", options = ["EMA", "SMA", "WMA", "RMA", "HMA", "VWMA"], inline = "ma1", group = gMa)
+ma1Len = input.int(20, "", minval = 2, inline = "ma1", group = gMa)
+ma1Col = input.color(#26a69a, "", inline = "ma1", group = gMa, tooltip = "Fast. Its length is also the fast EMA of the trend candles, the trend card and the signal engine, whatever type is drawn here.")
+ma2On = input.bool(true, "MA 2", inline = "ma2", group = gMa)
+ma2Type = input.string("EMA", "", options = ["EMA", "SMA", "WMA", "RMA", "HMA", "VWMA"], inline = "ma2", group = gMa)
+ma2Len = input.int(55, "", minval = 2, inline = "ma2", group = gMa)
+ma2Col = input.color(#ff9800, "", inline = "ma2", group = gMa, tooltip = "Mid. Its length is also the mid EMA of the trend candles, the trend card and the signal engine.")
+ma3On = input.bool(true, "MA 3", inline = "ma3", group = gMa)
+ma3Type = input.string("EMA", "", options = ["EMA", "SMA", "WMA", "RMA", "HMA", "VWMA"], inline = "ma3", group = gMa)
+ma3Len = input.int(200, "", minval = 2, inline = "ma3", group = gMa)
+ma3Col = input.color(#5c6bc0, "", inline = "ma3", group = gMa, tooltip = "Slow. Its length is also the slow EMA of the signal engine.")
+ma4On = input.bool(false, "MA 4", inline = "ma4", group = gMa)
+ma4Type = input.string("EMA", "", options = ["EMA", "SMA", "WMA", "RMA", "HMA", "VWMA"], inline = "ma4", group = gMa)
+ma4Len = input.int(100, "", minval = 2, inline = "ma4", group = gMa)
+ma4Col = input.color(#ab47bc, "", inline = "ma4", group = gMa, tooltip = "Display only.")
+
+bbOn = input.bool(false, "Show Bollinger area", group = gBb, tooltip = "Filled band between basis - multiplier x standard deviation and basis + multiplier x standard deviation of the close; the basis is the SMA of the close.")
+bbLen = input.int(20, "Length", minval = 2, group = gBb)
+bbMult = input.float(2.0, "Multiplier", minval = 0.1, step = 0.1, group = gBb)
+
+candlesOn = input.bool(true, "Trend candles", group = gTrend, tooltip = "Bull color when the fast EMA is above the mid EMA and the close is above the mid EMA, bear color in the mirror case, gray otherwise. Full color when the ADX is at or above the threshold, faded below it. The forming bar keeps the chart's own colors until it closes.")
+adxDotsOn = input.bool(true, "ADX dots", group = gTrend, tooltip = "A dot on the closed bar where the ADX reaches the threshold from below: under the bar when +DI is above -DI, over the bar when -DI is above +DI.")
+diLen = input.int(14, "DI length", minval = 1, group = gTrend)
+adxSmooth = input.int(14, "ADX smoothing", minval = 1, group = gTrend)
+adxThr = input.float(25.0, "ADX threshold", minval = 1, step = 1, group = gTrend)
+
+fibOn = input.bool(true, "Show auto Fibonacci", group = gFib)
+fibLen = input.int(144, "Lookback (bars)", minval = 2, maxval = 499, group = gFib, tooltip = "Highest high and lowest low of the last N closed bars. The swing runs from the older extreme to the more recent one, and level r sits at end - r x (end - start).")
+fibExt = input.bool(false, "Add 1.272 and 1.618", group = gFib, tooltip = "Two levels beyond the start of the swing.")
+
+pivOn = input.bool(false, "Show floor pivots", group = gPiv)
+pivTf = input.timeframe("D", "Pivot timeframe", group = gPiv, tooltip = "Classic floor pivots P, R1-R3 and S1-S3 from the high, low and close of the previous completed bar of this timeframe. Hidden unless it is above the chart timeframe.")
+
+sr1On = input.bool(true, "S/R #1 (chart timeframe)", group = gSr)
+sr2On = input.bool(true, "S/R #2 (higher timeframe)", group = gSr, tooltip = "The same swing rule on the timeframe of the Higher timeframe group, read from its completed bars. Dashed.")
+srLeft = input.int(10, "Pivot left bars", minval = 1, maxval = 50, group = gSr)
+srRight = input.int(10, "Pivot right bars", minval = 1, maxval = 50, group = gSr, tooltip = "A swing high or low confirms this many bars after its bar. The level is drawn back from the pivot bar on the bar that confirms it, and its dot's tooltip says so.")
+srRoleCol = input.bool(false, "Color by role", group = gSr, tooltip = "Off: every level in the line color. On: support in teal, resistance in red.")
+srCol = input.color(color.gray, "Line color", group = gSr)
+
+htfIn = input.timeframe("", "Higher timeframe", group = gHtf, tooltip = "Used by S/R #2 and by vote 2. Empty = automatic: a chart up to 15 minutes uses 60, up to 60 minutes 240, below 1 day D, below 1 week W, below 1 month M, otherwise 12M. Ignored unless it is above the chart timeframe.")
+
+mtfOn = input.bool(true, "Show trend card", group = gMtf, tooltip = "Per timeframe, from its last completed bar: Up when the fast EMA is above the mid EMA and the close is above the mid EMA, Down in the mirror case, Flat otherwise; then the ADX. Rows below the chart timeframe are not computed.")
+mtf1 = input.timeframe("15", "Row 1", group = gMtf)
+mtf2 = input.timeframe("60", "Row 2", group = gMtf)
+mtf3 = input.timeframe("240", "Row 3", group = gMtf)
+mtf4 = input.timeframe("D", "Row 4", group = gMtf)
+mtf5 = input.timeframe("W", "Row 5", group = gMtf)
+
+vpOn = input.bool(true, "Show volume profile", group = gVp, tooltip = "Last N closed bars. Each bar's volume is spread over the rows its high-low range overlaps, in proportion to the overlap. An approximation from OHLCV bars, not tick data. Nothing is drawn when the symbol reports no volume.")
+vpBars = input.int(200, "Bars", minval = 10, maxval = 499, group = gVp)
+vpRows = input.int(30, "Rows", minval = 5, maxval = 100, group = gVp)
+vpWidth = input.int(40, "Width (bars)", minval = 5, maxval = 200, group = gVp, tooltip = "Length of the row with the most volume, in bars to the right of the last bar.")
+vpVa = input.bool(true, "Shade the 70% value area", group = gVp)
+
+textSize = input.string("Small", "Table text size", options = ["Tiny", "Small", "Normal"], group = gDisp)
+
+// ───────────────────────── Types ─────────────────────────
+// A swing support or resistance level. role: 1 = support (price above it), -1 = resistance (price below it).
+// breaks: closed bars that closed through it; the first flips the role, the second removes the level. note
+// is the first part of the dot's tooltip and says when the pivot was confirmed.
+type Level
+    float price
+    int role
+    int breaks = 0
+    string note
+    line ln
+    label lb
+
+// ───────────────────────── History buffers ─────────────────────────
+// The volume profile and the Fibonacci drawing read up to 500 bars back on the last bar only. The runtime
+// does not resize buffers on realtime bars, so they are set here; drawings at past bar indices also read the
+// time buffer.
+max_bars_back(high, 500)
+max_bars_back(low, 500)
+max_bars_back(close, 500)
+max_bars_back(volume, 500)
+max_bars_back(time, 500)
+
+// ───────────────────────── Core series ─────────────────────────
+// Called on every bar at the global scope, so their history is consistent.
+float emaFast = ta.ema(close, ma1Len)
+float emaMid = ta.ema(close, ma2Len)
+float emaSlow = ta.ema(close, ma3Len)
+[diPlus, diMinus, adx] = ta.dmi(diLen, adxSmooth)
+float fibHi = ta.highest(high, fibLen)
+float fibLo = ta.lowest(low, fibLen)
+int fibHiOff = ta.highestbars(high, fibLen)
+int fibLoOff = ta.lowestbars(low, fibLen)
+
+color upCol = #26a69a
+color dnCol = #ef5350
+color flatCol = color.gray
+
+// Trend state: 1 when the fast EMA is above the mid EMA and the close is above the mid EMA, -1 in the mirror
+// case, 0 otherwise (also when a value is na, since comparisons with na are false).
+trendOf(float f, float m, float c) =>
+    f > m and c > m ? 1 : f < m and c < m ? -1 : 0
+
+// ───────────────────────── Moving averages ─────────────────────────
+// The type is an input, so each call always runs the same ta.*() function and its history stays consistent;
+// the simple qualifiers make the compiler enforce that.
+maOf(simple string t, simple int len) =>
+    switch t
+        "SMA" => ta.sma(close, len)
+        "WMA" => ta.wma(close, len)
+        "RMA" => ta.rma(close, len)
+        "HMA" => ta.hma(close, len)
+        "VWMA" => ta.vwma(close, len)
+        => ta.ema(close, len)
+
+float ma1 = maOf(ma1Type, ma1Len)
+float ma2 = maOf(ma2Type, ma2Len)
+float ma3 = maOf(ma3Type, ma3Len)
+float ma4 = maOf(ma4Type, ma4Len)
+plot(ma1On ? ma1 : na, "MA 1", color = ma1Col)
+plot(ma2On ? ma2 : na, "MA 2", color = ma2Col)
+plot(ma3On ? ma3 : na, "MA 3", color = ma3Col, linewidth = 2)
+plot(ma4On ? ma4 : na, "MA 4", color = ma4Col)
+
+// ───────────────────────── Bollinger area ─────────────────────────
+float bbBasis = ta.sma(close, bbLen)
+float bbDev = bbMult * ta.stdev(close, bbLen)
+pBbUp = plot(bbOn ? bbBasis + bbDev : na, "Bollinger upper", color = color.new(color.gray, 50), display = display.pane)
+pBbLo = plot(bbOn ? bbBasis - bbDev : na, "Bollinger lower", color = color.new(color.gray, 50), display = display.pane)
+fill(pBbUp, pBbLo, color = color.new(color.gray, 88), title = "Bollinger area")
+
+// ───────────────────────── Trend candles and ADX dots ─────────────────────────
+int trendNow = trendOf(emaFast, emaMid, close)
+color trendCol = trendNow == 1 ? upCol : trendNow == -1 ? dnCol : flatCol
+// Full color when the ADX is at or above the threshold, faded otherwise. The forming bar keeps the chart's own
+// colors until it closes.
+barcolor(candlesOn and barstate.isconfirmed ? (adx >= adxThr ? trendCol : color.new(trendCol, 60)) : na, title = "Trend candles")
+
+// The ADX reaches the threshold from below on this bar; the dots appear once the bar has closed.
+bool adxUp = adx >= adxThr and adx[1] < adxThr
+plotshape(adxDotsOn and barstate.isconfirmed and adxUp and diPlus > diMinus, "ADX dot, +DI above -DI", style = shape.circle, location = location.belowbar, color = upCol, size = size.tiny, display = display.pane)
+plotshape(adxDotsOn and barstate.isconfirmed and adxUp and diMinus > diPlus, "ADX dot, -DI above +DI", style = shape.circle, location = location.abovebar, color = dnCol, size = size.tiny, display = display.pane)
+
+// ───────────────────────── Floor pivots ─────────────────────────
+// The previous completed bar of the pivot timeframe: the expression is offset by one bar and requested with
+// lookahead_on, so the values are final and never come from a bar that has not closed.
+[pvH, pvL, pvC] = request.security(syminfo.tickerid, pivTf, [high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+bool pivOk = pivOn and timeframe.in_seconds(pivTf) > timeframe.in_seconds(timeframe.period)
+float pvP = (pvH + pvL + pvC) / 3
+float pvR1 = 2 * pvP - pvL
+float pvS1 = 2 * pvP - pvH
+float pvR2 = pvP + (pvH - pvL)
+float pvS2 = pvP - (pvH - pvL)
+float pvR3 = pvH + 2 * (pvP - pvL)
+float pvS3 = pvL - 2 * (pvH - pvP)
+// The lines break on the bar where P changes, so a new period never joins the previous one.
+bool pvKeep = pivOk and pvP == pvP[1]
+color pvResCol = color.new(dnCol, 30)
+color pvSupCol = color.new(upCol, 30)
+plot(pvKeep ? pvP : na, "Pivot P", color = color.new(color.gray, 10), style = plot.style_linebr, display = display.pane)
+plot(pvKeep ? pvR1 : na, "Pivot R1", color = pvResCol, style = plot.style_linebr, display = display.pane)
+plot(pvKeep ? pvR2 : na, "Pivot R2", color = pvResCol, style = plot.style_linebr, display = display.pane)
+plot(pvKeep ? pvR3 : na, "Pivot R3", color = pvResCol, style = plot.style_linebr, display = display.pane)
+plot(pvKeep ? pvS1 : na, "Pivot S1", color = pvSupCol, style = plot.style_linebr, display = display.pane)
+plot(pvKeep ? pvS2 : na, "Pivot S2", color = pvSupCol, style = plot.style_linebr, display = display.pane)
+plot(pvKeep ? pvS3 : na, "Pivot S3", color = pvSupCol, style = plot.style_linebr, display = display.pane)
+
+// ───────────────────────── Higher timeframe ─────────────────────────
+// The automatic higher timeframe: the next step above the chart timeframe.
+autoHtf() =>
+    int s = timeframe.in_seconds(timeframe.period)
+    s <= 900 ? "60" : s <= 3600 ? "240" : s < 86400 ? "D" : s < 604800 ? "W" : s < timeframe.in_seconds("1M") ? "M" : "12M"
+
+string htf = htfIn == "" ? autoHtf() : htfIn
+bool htfOk = timeframe.in_seconds(htf) > timeframe.in_seconds(timeframe.period)
+
+// Values of the last completed bar of the higher timeframe: its fast and mid EMAs and close, the swing pivots
+// it confirmed, its open time, and the open time of the pivot bar. Every element is offset by one bar and
+// requested with lookahead_on.
+htfPack() =>
+    [ta.ema(close, ma1Len)[1], ta.ema(close, ma2Len)[1], close[1], ta.pivothigh(high, srLeft, srRight)[1], ta.pivotlow(low, srLeft, srRight)[1], time[1], time[srRight + 1]]
+
+[hEmaF, hEmaM, hClose, hPh, hPl, hBarTime, hPivTime] = request.security(syminfo.tickerid, htf, htfPack(), lookahead = barmerge.lookahead_on)
+// True on the chart bar where a new higher-timeframe bar has completed since the previous chart bar.
+bool htfNew = not na(hBarTime) and (na(hBarTime[1]) or hBarTime != hBarTime[1])
+
+// ───────────────────────── Support and resistance ─────────────────────────
+color supCol = upCol
+color resCol = dnCol
+
+fmtTime(int t) =>
+    na(t) ? "n/a" : str.format_time(t, "yyyy-MM-dd HH:mm", syminfo.timezone)
+
+levelColor(int role) =>
+    srRoleCol ? (role == 1 ? supCol : resCol) : srCol
+
+levelTip(Level lv) =>
+    string state = lv.breaks == 0 ? (lv.role == 1 ? "Support. A close below it flips it to resistance." : "Resistance. A close above it flips it to support.") : lv.role == 1 ? "Support since a close above it. A close below it removes it." : "Resistance since a close below it. A close above it removes it."
+    lv.note + "\n" + state
+
+// Adds a level at price from bar x (a bar index or a time, per xl) and keeps at most maxN levels in arr: the
+// oldest beyond that is deleted.
+addLevel(array<Level> arr, int maxN, float price, int role, int x, string xl, string lineStyle, string note) =>
+    color col = levelColor(role)
+    Level lv = Level.new(price = price, role = role, note = note)
+    lv.ln := line.new(x, price, x + 1, price, xloc = xl, extend = extend.right, color = col, style = lineStyle, width = 1)
+    lv.lb := label.new(x, price, "", xloc = xl, style = label.style_circle, color = col, size = size.tiny, tooltip = levelTip(lv))
+    array.push(arr, lv)
+    if array.size(arr) > maxN
+        Level old = array.shift(arr)
+        line.delete(old.ln)
+        label.delete(old.lb)
+
+// Applies one closed bar with close c to every level of arr: a close beyond a level breaks it. The first break
+// flips the role, the second removes the level. The loop runs backwards because it removes elements.
+checkBreaks(array<Level> arr, float c) =>
+    int n = array.size(arr)
+    if n > 0 and not na(c)
+        for i = n - 1 to 0
+            Level lv = array.get(arr, i)
+            if (lv.role == -1 and c > lv.price) or (lv.role == 1 and c < lv.price)
+                lv.breaks += 1
+                if lv.breaks >= 2
+                    line.delete(lv.ln)
+                    label.delete(lv.lb)
+                    array.remove(arr, i)
+                else
+                    lv.role := -lv.role
+                    color col = levelColor(lv.role)
+                    line.set_color(lv.ln, col)
+                    label.set_color(lv.lb, col)
+                    label.set_tooltip(lv.lb, levelTip(lv))
+
+// A swing high or low confirms srRight bars after its bar: its price is high[srRight] or low[srRight].
+float srPh = ta.pivothigh(high, srLeft, srRight)
+float srPl = ta.pivotlow(low, srLeft, srRight)
+
+// Levels born from pivot highs and from pivot lows: at most 8 of each on the chart timeframe, 4 of each on the
+// higher timeframe.
+var array<Level> sr1Hi = array.new<Level>()
+var array<Level> sr1Lo = array.new<Level>()
+var array<Level> sr2Hi = array.new<Level>()
+var array<Level> sr2Lo = array.new<Level>()
+
+string srLr = str.tostring(srLeft) + "/" + str.tostring(srRight)
+
+// Chart timeframe: on every closed bar, breaks first, then the pivots that bar confirms.
+if barstate.isconfirmed and sr1On
+    checkBreaks(sr1Hi, close)
+    checkBreaks(sr1Lo, close)
+    string confTxt = ", confirmed " + str.tostring(srRight) + " bars after its bar, when the bar of " + fmtTime(time) + " closed."
+    if not na(srPh)
+        addLevel(sr1Hi, 8, srPh, -1, bar_index - srRight, xloc.bar_index, line.style_solid, "Swing high " + str.tostring(srPh, format.mintick) + " (pivot " + srLr + ")" + confTxt)
+    if not na(srPl)
+        addLevel(sr1Lo, 8, srPl, 1, bar_index - srRight, xloc.bar_index, line.style_solid, "Swing low " + str.tostring(srPl, format.mintick) + " (pivot " + srLr + ")" + confTxt)
+
+// Higher timeframe: once per completed higher-timeframe bar, on the first closed chart bar after it, with that
+// bar's close for the breaks.
+if barstate.isconfirmed and sr2On and htfOk and htfNew
+    checkBreaks(sr2Hi, hClose)
+    checkBreaks(sr2Lo, hClose)
+    string confTxt = ", confirmed " + str.tostring(srRight) + " bars of " + htf + " after its bar; added when the chart bar of " + fmtTime(time) + " closed."
+    if not na(hPh)
+        addLevel(sr2Hi, 4, hPh, -1, hPivTime, xloc.bar_time, line.style_dashed, htf + " swing high " + str.tostring(hPh, format.mintick) + " (pivot " + srLr + ")" + confTxt)
+    if not na(hPl)
+        addLevel(sr2Lo, 4, hPl, 1, hPivTime, xloc.bar_time, line.style_dashed, htf + " swing low " + str.tostring(hPl, format.mintick) + " (pivot " + srLr + ")" + confTxt)
+
+// ───────────────────────── Trend card data ─────────────────────────
+// Per row, from the last completed bar of that timeframe: fast EMA, mid EMA, close and ADX, each offset by one
+// bar and requested with lookahead_on.
+trendPack() =>
+    [dp, dm, a] = ta.dmi(diLen, adxSmooth)
+    [ta.ema(close, ma1Len)[1], ta.ema(close, ma2Len)[1], close[1], a[1]]
+
+[m1F, m1M, m1C, m1A] = request.security(syminfo.tickerid, mtf1, trendPack(), lookahead = barmerge.lookahead_on)
+[m2F, m2M, m2C, m2A] = request.security(syminfo.tickerid, mtf2, trendPack(), lookahead = barmerge.lookahead_on)
+[m3F, m3M, m3C, m3A] = request.security(syminfo.tickerid, mtf3, trendPack(), lookahead = barmerge.lookahead_on)
+[m4F, m4M, m4C, m4A] = request.security(syminfo.tickerid, mtf4, trendPack(), lookahead = barmerge.lookahead_on)
+[m5F, m5M, m5C, m5A] = request.security(syminfo.tickerid, mtf5, trendPack(), lookahead = barmerge.lookahead_on)
+
+// ───────────────────────── Last-bar drawings ─────────────────────────
+// The Fibonacci levels and the volume profile are redrawn on the last bar of the chart from closed bars only:
+// while the last bar is still forming, every series is read one bar back (off = 1), so the drawings change only
+// when a bar closes.
+var array<line> fibLines = array.new<line>()
+var array<label> fibLabels = array.new<label>()
+var array<box> vpBoxes = array.new<box>()
+var line vpPoc = na
+
+color fibBandCol = #ff9800
+color pocCol = #ec407a
+
+if barstate.islast
+    int off = barstate.isconfirmed ? 0 : 1
+
+    // Auto Fibonacci: the swing runs from the older of the two extremes to the more recent one, and level r sits
+    // at end - r x (end - start). The 0.5 and 0.786 lines bound the band that vote 7 reads.
+    for ln in fibLines
+        line.delete(ln)
+    array.clear(fibLines)
+    for lb in fibLabels
+        label.delete(lb)
+    array.clear(fibLabels)
+    float fHi = fibHi[off]
+    float fLo = fibLo[off]
+    int fHiBar = bar_index - off + fibHiOff[off]
+    int fLoBar = bar_index - off + fibLoOff[off]
+    if fibOn and fHi > fLo and fHiBar != fLoBar
+        bool upSwing = fHiBar > fLoBar
+        float endP = upSwing ? fHi : fLo
+        float startP = upSwing ? fLo : fHi
+        array<float> ratios = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0)
+        if fibExt
+            array.push(ratios, 1.272)
+            array.push(ratios, 1.618)
+        for r in ratios
+            float y = endP - r * (endP - startP)
+            color c = r == 0.5 or r == 0.786 ? fibBandCol : color.new(color.gray, 30)
+            array.push(fibLines, line.new(math.min(fHiBar, fLoBar), y, bar_index, y, extend = extend.right, color = c, style = line.style_dotted))
+            array.push(fibLabels, label.new(bar_index + 3, y, str.tostring(r, "0.###") + "  " + str.tostring(y, format.mintick), style = label.style_label_left, color = color.new(color.black, 100), textcolor = c, size = size.small))
+
+    // Volume profile over the last vpBars closed bars: a bar's volume goes to the rows its high-low range
+    // overlaps, in proportion to the overlap; a bar with no range puts it in the row of its close. The point of
+    // control (POC) is the row with the most volume; the value area grows from it one row at a time, taking the
+    // neighbor with more volume, until it holds 70% of the total.
+    for b in vpBoxes
+        box.delete(b)
+    array.clear(vpBoxes)
+    line.delete(vpPoc)
+    vpPoc := na
+    if vpOn
+        int first = off
+        int last = off + vpBars - 1
+        float top = high[first]
+        float bot = low[first]
+        float tot = 0.0
+        for i = first to last
+            top := math.max(top, high[i])
+            bot := math.min(bot, low[i])
+            tot += nz(volume[i])
+        if tot > 0 and top > bot
+            float rowH = (top - bot) / vpRows
+            array<float> vols = array.new<float>(vpRows, 0.0)
+            for i = first to last
+                float v = nz(volume[i])
+                if v > 0
+                    float h = high[i]
+                    float l = low[i]
+                    if h == l
+                        int r = math.min(math.floor((close[i] - bot) / rowH), vpRows - 1)
+                        array.set(vols, r, array.get(vols, r) + v)
+                    else
+                        int r0 = math.min(math.floor((l - bot) / rowH), vpRows - 1)
+                        int r1 = math.min(math.floor((h - bot) / rowH), vpRows - 1)
+                        for r = r0 to r1
+                            float rowBot = bot + r * rowH
+                            float ov = math.min(h, rowBot + rowH) - math.max(l, rowBot)
+                            if ov > 0
+                                array.set(vols, r, array.get(vols, r) + v * ov / (h - l))
+            float vMax = array.max(vols)
+            int poc = array.indexof(vols, vMax)
+            int vaLo = poc
+            int vaHi = poc
+            float acc = vMax
+            while acc < 0.7 * tot and (vaLo > 0 or vaHi < vpRows - 1)
+                float up = vaHi < vpRows - 1 ? array.get(vols, vaHi + 1) : -1.0
+                float dn = vaLo > 0 ? array.get(vols, vaLo - 1) : -1.0
+                if up >= dn
+                    vaHi += 1
+                    acc += up
+                else
+                    vaLo -= 1
+                    acc += dn
+            int x0 = bar_index + 2
+            for r = 0 to vpRows - 1
+                float v = array.get(vols, r)
+                if v > 0
+                    int w = math.max(1, math.round(vpWidth * v / vMax))
+                    color c = r == poc ? color.new(pocCol, 40) : vpVa and r >= vaLo and r <= vaHi ? color.new(#5c6bc0, 65) : color.new(color.gray, 75)
+                    array.push(vpBoxes, box.new(x0, bot + (r + 1) * rowH, x0 + w, bot + r * rowH, border_color = c, bgcolor = c))
+            float pocY = bot + (poc + 0.5) * rowH
+            vpPoc := line.new(bar_index - last, pocY, x0 + vpWidth, pocY, color = pocCol, width = 1)
+
+// ───────────────────────── Trend card ─────────────────────────
+tSize = switch textSize
+    "Tiny" => size.tiny
+    "Normal" => size.normal
+    => size.small
+
+// Opaque cell colors blended from the chart background, so candles do not show through the tables on a light
+// or a dark theme.
+cellBg = color.from_gradient(0.12, 0.0, 1.0, chart.bg_color, color.gray)
+hdrBg = color.from_gradient(0.30, 0.0, 1.0, chart.bg_color, color.gray)
+upBg = color.from_gradient(0.40, 0.0, 1.0, chart.bg_color, upCol)
+dnBg = color.from_gradient(0.40, 0.0, 1.0, chart.bg_color, dnCol)
+
+var table card = table.new(position.top_right, 3, 6, border_width = 1)
+
+cardCell(int col, int row, string txt, color bg = na, string align = text.align_center) =>
+    table.cell(card, col, row, txt, text_color = chart.fg_color, text_size = tSize, text_halign = align, bgcolor = na(bg) ? cellBg : bg)
+
+// One card row: the timeframe, its trend from its last completed bar, and its ADX. A timeframe below the
+// chart's is not computed.
+cardRow(int row, string tfIn, float f, float m, float c, float a) =>
+    string tf = tfIn == "" ? timeframe.period : tfIn
+    cardCell(0, row, tf, na, text.align_left)
+    if timeframe.in_seconds(tf) < timeframe.in_seconds(timeframe.period)
+        cardCell(1, row, "below chart")
+        cardCell(2, row, "")
+    else
+        int tr = trendOf(f, m, c)
+        bool known = not na(f) and not na(m) and not na(c)
+        cardCell(1, row, not known ? "n/a" : tr == 1 ? "Up" : tr == -1 ? "Down" : "Flat", known and tr == 1 ? upBg : known and tr == -1 ? dnBg : na)
+        cardCell(2, row, na(a) ? "n/a" : str.tostring(a, "0") + (a >= adxThr ? " strong" : " weak"))
+
+if barstate.islast and mtfOn
+    cardCell(0, 0, "TF", hdrBg, text.align_left)
+    cardCell(1, 0, "Trend", hdrBg)
+    cardCell(2, 0, "ADX " + str.tostring(adxThr, "0.#"), hdrBg)
+    cardRow(1, mtf1, m1F, m1M, m1C, m1A)
+    cardRow(2, mtf2, m2F, m2M, m2C, m2A)
+    cardRow(3, mtf3, m3F, m3M, m3C, m3A)
+    cardRow(4, mtf4, m4F, m4M, m4C, m4A)
+    cardRow(5, mtf5, m5F, m5M, m5C, m5A)
