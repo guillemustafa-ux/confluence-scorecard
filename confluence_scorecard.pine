@@ -2,12 +2,18 @@
 indicator("Confluence Scorecard", shorttitle = "CONF-SCORE", overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
 
 // Confluence Scorecard
-// Context layers, each with its own switch: four moving averages, a Bollinger area, trend candles, ADX dots,
-// an auto Fibonacci retracement, floor pivots from a higher timeframe, two sets of swing support and
-// resistance (chart timeframe and a higher timeframe) that flip role on a break, a multi-timeframe trend card
-// and a fixed-range volume profile.
-// Dots, candle colors and levels are set on closed bars only, and every request.security call returns the
-// last completed bar of the requested timeframe.
+// 1) Seven votes, each +1, 0 or -1, read on closed bars: EMA stack, higher-timeframe trend, ADX with the
+//    leading DI, squeeze momentum sign and slope, above-average volume signed by the candle, a recent regular
+//    RSI divergence, and the close inside the 0.5-0.786 band of the current swing. The score is their sum.
+// 2) BUY when the score reaches the minimum score from below, SELL when it reaches minus the minimum from
+//    above; by default they alternate. Each label carries every vote in its tooltip. An optional safeguard
+//    waits for a later close beyond the signal bar's high or low.
+// 3) Context layers, each with its own switch: four moving averages, a Bollinger area, trend candles, ADX dots,
+//    an auto Fibonacci retracement, floor pivots from a higher timeframe, two sets of swing support and
+//    resistance (chart timeframe and a higher timeframe) that flip role on a break, a multi-timeframe trend
+//    card and a fixed-range volume profile.
+// Votes, signals, dots, candle colors and levels are set on closed bars only, and every request.security call
+// returns the last completed bar of the requested timeframe.
 
 // ───────────────────────── Inputs ─────────────────────────
 const string gMa = "Moving averages"
@@ -19,6 +25,9 @@ const string gSr = "Support and resistance"
 const string gHtf = "Higher timeframe"
 const string gMtf = "Trend card"
 const string gVp = "Volume profile"
+const string gEng = "Signal engine"
+const string gSafe = "Safeguard"
+const string gAlert = "Alerts"
 const string gDisp = "Display"
 
 ma1On = input.bool(true, "MA 1", inline = "ma1", group = gMa)
@@ -49,7 +58,7 @@ adxSmooth = input.int(14, "ADX smoothing", minval = 1, group = gTrend)
 adxThr = input.float(25.0, "ADX threshold", minval = 1, step = 1, group = gTrend)
 
 fibOn = input.bool(true, "Show auto Fibonacci", group = gFib)
-fibLen = input.int(144, "Lookback (bars)", minval = 2, maxval = 499, group = gFib, tooltip = "Highest high and lowest low of the last N closed bars. The swing runs from the older extreme to the more recent one, and level r sits at end - r x (end - start).")
+fibLen = input.int(144, "Lookback (bars)", minval = 2, maxval = 499, group = gFib, tooltip = "Highest high and lowest low of the last N closed bars. The swing runs from the older extreme to the more recent one, and level r sits at end - r x (end - start). Vote 7 reads the same swing.")
 fibExt = input.bool(false, "Add 1.272 and 1.618", group = gFib, tooltip = "Two levels beyond the start of the swing.")
 
 pivOn = input.bool(false, "Show floor pivots", group = gPiv)
@@ -76,6 +85,25 @@ vpBars = input.int(200, "Bars", minval = 10, maxval = 499, group = gVp)
 vpRows = input.int(30, "Rows", minval = 5, maxval = 100, group = gVp)
 vpWidth = input.int(40, "Width (bars)", minval = 5, maxval = 200, group = gVp, tooltip = "Length of the row with the most volume, in bars to the right of the last bar.")
 vpVa = input.bool(true, "Shade the 70% value area", group = gVp)
+
+minScore = input.int(4, "Minimum score", minval = 1, maxval = 7, group = gEng, tooltip = "BUY when the score of a closed bar reaches this value from below; SELL when it reaches minus this value from above. The score is the sum of the seven votes, -7 to +7.")
+alternate = input.bool(true, "Alternate signals", group = gEng, tooltip = "No new BUY until a SELL has printed, and the reverse.")
+sigLabelsOn = input.bool(true, "Show BUY/SELL labels", group = gEng, tooltip = "Hover a label to read every vote of its bar.")
+sigKeep = input.int(100, "Labels kept", minval = 1, maxval = 150, group = gEng, tooltip = "The oldest BUY/SELL labels beyond this number are deleted, and so are the oldest safeguard marks. The scorecard counts every signal either way.")
+sqzLen = input.int(20, "Squeeze momentum length (vote 4)", minval = 2, group = gEng)
+volLen = input.int(20, "Volume average length (vote 5)", minval = 1, group = gEng)
+volMult = input.float(1.2, "Volume multiple (vote 5)", minval = 0.1, step = 0.1, group = gEng)
+rsiLen = input.int(14, "RSI length (vote 6)", minval = 2, group = gEng)
+divLeft = input.int(5, "RSI pivot left bars (vote 6)", minval = 1, maxval = 50, group = gEng)
+divRight = input.int(5, "RSI pivot right bars (vote 6)", minval = 1, maxval = 50, group = gEng, tooltip = "An RSI pivot confirms this many bars after its bar; a divergence counts from the bar that confirms it.")
+divMin = input.int(5, "Min bars between RSI pivots (vote 6)", minval = 1, group = gEng)
+divMax = input.int(60, "Max bars between RSI pivots (vote 6)", minval = 2, group = gEng)
+divWindow = input.int(10, "Divergence window (vote 6)", minval = 1, maxval = 100, group = gEng, tooltip = "A divergence votes on the bar that confirms it and on the next window - 1 bars.")
+
+sgOn = input.bool(false, "Use safeguard", group = gSafe, tooltip = "A signal is confirmed by the first closed bar among the next N bars that closes above the signal bar's high (BUY) or below its low (SELL) while the score still reaches minimum score - 1 in the signal's direction. When on, the take profits, the stop and the scorecard start at the confirmation close, and a signal that is not confirmed opens no trade.")
+sgBars = input.int(3, "Confirmation window (bars)", minval = 1, maxval = 50, group = gSafe)
+
+alertMode = input.string("Signals only", "alert() calls", options = ["Signals only", "Every bar close"], group = gAlert, tooltip = "For an alert set on 'Any alert() function call'. Signals only: on the closed bars with a BUY, a SELL or a safeguard confirmation. Every bar close: on every closed bar. Each message carries the score and the seven votes.")
 
 textSize = input.string("Small", "Table text size", options = ["Tiny", "Small", "Normal"], group = gDisp)
 
@@ -298,6 +326,186 @@ trendPack() =>
 [m4F, m4M, m4C, m4A] = request.security(syminfo.tickerid, mtf4, trendPack(), lookahead = barmerge.lookahead_on)
 [m5F, m5M, m5C, m5A] = request.security(syminfo.tickerid, mtf5, trendPack(), lookahead = barmerge.lookahead_on)
 
+// ───────────────────────── Signal engine: votes ─────────────────────────
+// Seven votes, each +1, 0 or -1. They are series on every bar, so their history is consistent; signals read
+// them only on closed bars.
+
+// Vote 1, EMA stack: fast above mid above slow (+1), fast below mid below slow (-1).
+int v1 = emaFast > emaMid and emaMid > emaSlow ? 1 : emaFast < emaMid and emaMid < emaSlow ? -1 : 0
+
+// Vote 2, trend of the last completed higher-timeframe bar with the trend card's rule; 0 when the higher
+// timeframe is not above the chart's.
+int v2 = htfOk ? trendOf(hEmaF, hEmaM, hClose) : 0
+
+// Vote 3, ADX at or above the threshold with the leading DI.
+int v3 = adx >= adxThr and diPlus > diMinus ? 1 : adx >= adxThr and diMinus > diPlus ? -1 : 0
+
+// Vote 4, squeeze momentum: the linear regression over sqzLen bars of the close minus the average of two
+// values, the midpoint of the highest high and the lowest low, and the SMA of the close. Above zero and rising
+// (+1), below zero and falling (-1).
+float sqzMid = math.avg(math.avg(ta.highest(high, sqzLen), ta.lowest(low, sqzLen)), ta.sma(close, sqzLen))
+float mom = ta.linreg(close - sqzMid, sqzLen, 0)
+int v4 = mom > 0 and mom > mom[1] ? 1 : mom < 0 and mom < mom[1] ? -1 : 0
+
+// Vote 5, volume above volMult times its SMA, signed by the candle: up candle (+1), down candle (-1). A symbol
+// with no volume votes 0.
+float volAvg = ta.sma(volume, volLen)
+bool volHigh = volume > volAvg * volMult
+int v5 = volHigh and close > open ? 1 : volHigh and close < open ? -1 : 0
+
+// Vote 6, regular RSI divergence, found as in rsi-divergence-vs-random: pivots of the RSI with ta.pivothigh and
+// ta.pivotlow, divLeft bars to the left and divRight to the right, so a pivot confirms divRight bars after its
+// bar. With divMin to divMax bars strictly between it and the previous pivot of the same kind: price lower low
+// with RSI higher low is bullish, price higher high with RSI lower high is bearish. The previous pivot is
+// replaced either way.
+float rsi = ta.rsi(close, rsiLen)
+float rsiPh = ta.pivothigh(rsi, divLeft, divRight)
+float rsiPl = ta.pivotlow(rsi, divLeft, divRight)
+var float prevHiRsi = na
+var float prevHiPrice = na
+var int prevHiBar = na
+var float prevLoRsi = na
+var float prevLoPrice = na
+var int prevLoBar = na
+var int bullDivBar = na
+var int bearDivBar = na
+if barstate.isconfirmed
+    int pivBar = bar_index - divRight
+    if not na(rsiPh)
+        if not na(prevHiBar)
+            int gap = pivBar - prevHiBar - 1
+            if gap >= divMin and gap <= divMax and high[divRight] > prevHiPrice and rsiPh < prevHiRsi
+                bearDivBar := bar_index
+        prevHiRsi := rsiPh
+        prevHiPrice := high[divRight]
+        prevHiBar := pivBar
+    if not na(rsiPl)
+        if not na(prevLoBar)
+            int gap = pivBar - prevLoBar - 1
+            if gap >= divMin and gap <= divMax and low[divRight] < prevLoPrice and rsiPl > prevLoRsi
+                bullDivBar := bar_index
+        prevLoRsi := rsiPl
+        prevLoPrice := low[divRight]
+        prevLoBar := pivBar
+// A divergence votes on the bar that confirms it and the next divWindow - 1 bars. When both kinds are in the
+// window the more recent one votes; two on the same bar cancel out.
+bool bullRecent = not na(bullDivBar) and bar_index - bullDivBar < divWindow
+bool bearRecent = not na(bearDivBar) and bar_index - bearDivBar < divWindow
+int v6 = bullRecent and (not bearRecent or bullDivBar > bearDivBar) ? 1 : bearRecent and (not bullRecent or bearDivBar > bullDivBar) ? -1 : 0
+
+// Vote 7, the close inside the 0.5-0.786 retracement band of the auto Fibonacci swing of the last fibLen bars,
+// this one included: in an up swing (the high is the more recent extreme) +1, in a down swing -1.
+float fibRng = fibHi - fibLo
+bool fibUp = fibHiOff > fibLoOff
+bool fibDn = fibHiOff < fibLoOff
+int v7 = fibRng > 0 and fibUp and close <= fibHi - 0.5 * fibRng and close >= fibHi - 0.786 * fibRng ? 1 : fibRng > 0 and fibDn and close >= fibLo + 0.5 * fibRng and close <= fibLo + 0.786 * fibRng ? -1 : 0
+
+int score = v1 + v2 + v3 + v4 + v5 + v6 + v7
+
+// Signals start once the bar index reaches the longest of the three engine EMAs and the ADX, the momentum and
+// the RSI have values.
+bool ready = bar_index >= math.max(ma1Len, ma2Len, ma3Len) and not na(adx) and not na(mom) and not na(rsi)
+
+fmtVote(int v) =>
+    v > 0 ? "+1" : v < 0 ? "-1" : "0"
+
+fmtScore(int s) =>
+    s > 0 ? "+" + str.tostring(s) : str.tostring(s)
+
+// Every vote of the current bar by name and value, for the label tooltip.
+votesText() =>
+    string s = "Score " + fmtScore(score) + " of 7, bar of " + fmtTime(time)
+    s += "\n1 EMA stack " + str.tostring(ma1Len) + "/" + str.tostring(ma2Len) + "/" + str.tostring(ma3Len) + ": " + fmtVote(v1)
+    s += "\n2 Trend of the last closed " + htf + " bar" + (htfOk ? "" : " (not above the chart timeframe)") + ": " + fmtVote(v2)
+    s += "\n3 ADX " + str.tostring(adx, "0.0") + " vs " + str.tostring(adxThr, "0.#") + ", +DI " + str.tostring(diPlus, "0.0") + ", -DI " + str.tostring(diMinus, "0.0") + ": " + fmtVote(v3)
+    s += "\n4 Squeeze momentum " + str.tostring(mom, format.mintick) + ": " + fmtVote(v4)
+    s += "\n5 Volume " + (na(volAvg) or volAvg == 0 ? "n/a" : str.tostring(volume / volAvg, "0.00") + " x average") + ": " + fmtVote(v5)
+    string divTxt = v6 == 1 ? " (bullish, confirmed " + str.tostring(bar_index - bullDivBar) + " bars ago)" : v6 == -1 ? " (bearish, confirmed " + str.tostring(bar_index - bearDivBar) + " bars ago)" : ""
+    s += "\n6 RSI divergence in the last " + str.tostring(divWindow) + " bars" + divTxt + ": " + fmtVote(v6)
+    s += "\n7 Close in the 0.5-0.786 band of the " + str.tostring(fibLen) + "-bar swing: " + fmtVote(v7)
+    s
+
+// The seven votes in one line, for alert messages.
+votesShort() =>
+    "EMA " + fmtVote(v1) + " HTF " + fmtVote(v2) + " ADX " + fmtVote(v3) + " SQZ " + fmtVote(v4) + " VOL " + fmtVote(v5) + " DIV " + fmtVote(v6) + " FIB " + fmtVote(v7)
+
+// ───────────────────────── Signals ─────────────────────────
+// BUY when the score of a closed bar reaches minScore from below; SELL when it reaches -minScore from above.
+// score[1] is the score of the previous bar at its close. With alternate on, a BUY needs a SELL before it and
+// the reverse; the first signal can be either.
+var int lastSig = 0
+bool buySig = false
+bool sellSig = false
+if barstate.isconfirmed and ready
+    if score >= minScore and score[1] < minScore and (not alternate or lastSig != 1)
+        buySig := true
+        lastSig := 1
+    else if score <= -minScore and score[1] > -minScore and (not alternate or lastSig != -1)
+        sellSig := true
+        lastSig := -1
+
+// Safeguard: a pending signal is confirmed by the first closed bar among the next sgBars bars that closes above
+// the signal bar's high (BUY) or below its low (SELL) while the score still reaches minScore - 1 in the signal's
+// direction. It lapses after sgBars bars, and a new BUY or SELL replaces it. The pending label's tooltip records
+// what happened.
+var int pendDir = 0
+var int pendBar = na
+var int pendTime = na
+var float pendHigh = na
+var float pendLow = na
+var label pendLabel = na
+var string pendTip = ""
+var array<label> sigLabels = array.new<label>()
+var array<label> chkLabels = array.new<label>()
+bool buyConf = false
+bool sellConf = false
+
+// Deletes the oldest labels of arr until it holds at most keep.
+trimLabels(array<label> arr, int keep) =>
+    while array.size(arr) > keep
+        label.delete(array.shift(arr))
+
+// Appends a line to the tooltip of the pending signal's label, when there is one.
+notePending(string txt) =>
+    if not na(pendLabel)
+        label.set_tooltip(pendLabel, pendTip + "\n" + txt)
+
+if barstate.isconfirmed and sgOn
+    if pendDir != 0
+        if pendDir == 1 and close > pendHigh and score >= minScore - 1
+            buyConf := true
+        else if pendDir == -1 and close < pendLow and score <= -(minScore - 1)
+            sellConf := true
+        if buyConf or sellConf
+            string chkTip = "Safeguard: confirms the " + (buyConf ? "BUY" : "SELL") + " of " + fmtTime(pendTime) + ". This bar closed " + (buyConf ? "above that bar's high" : "below that bar's low") + " with score " + fmtScore(score) + ", " + str.tostring(bar_index - pendBar) + " bars after the signal."
+            notePending("Safeguard: confirmed " + str.tostring(bar_index - pendBar) + " bars later.")
+            if sigLabelsOn
+                array.push(chkLabels, label.new(bar_index, buyConf ? low : high, "✓", yloc = buyConf ? yloc.belowbar : yloc.abovebar, style = buyConf ? label.style_label_up : label.style_label_down, color = buyConf ? upCol : dnCol, textcolor = color.white, size = size.tiny, tooltip = chkTip))
+                trimLabels(chkLabels, sigKeep)
+            pendDir := 0
+        else if bar_index - pendBar >= sgBars
+            notePending("Safeguard: not confirmed within " + str.tostring(sgBars) + " bars; no trade.")
+            pendDir := 0
+    if buySig or sellSig
+        if pendDir != 0
+            notePending("Safeguard: replaced by the next signal before it was confirmed; no trade.")
+        pendDir := buySig ? 1 : -1
+        pendBar := bar_index
+        pendTime := time
+        pendHigh := high
+        pendLow := low
+
+// The BUY/SELL label, below or above the bar, with every vote in its tooltip.
+if buySig or sellSig
+    string tip = votesText()
+    label lb = na
+    if sigLabelsOn
+        lb := label.new(bar_index, buySig ? low : high, (buySig ? "BUY " : "SELL ") + str.tostring(math.abs(score)) + "/7", yloc = buySig ? yloc.belowbar : yloc.abovebar, style = buySig ? label.style_label_up : label.style_label_down, color = buySig ? upCol : dnCol, textcolor = color.white, size = size.small, tooltip = tip)
+        array.push(sigLabels, lb)
+        trimLabels(sigLabels, sigKeep)
+    pendLabel := lb
+    pendTip := tip
+
 // ───────────────────────── Last-bar drawings ─────────────────────────
 // The Fibonacci levels and the volume profile are redrawn on the last bar of the chart from closed bars only:
 // while the last bar is still forming, every series is read one bar back (off = 1), so the drawings change only
@@ -414,7 +622,7 @@ hdrBg = color.from_gradient(0.30, 0.0, 1.0, chart.bg_color, color.gray)
 upBg = color.from_gradient(0.40, 0.0, 1.0, chart.bg_color, upCol)
 dnBg = color.from_gradient(0.40, 0.0, 1.0, chart.bg_color, dnCol)
 
-var table card = table.new(position.top_right, 3, 6, border_width = 1)
+var table card = table.new(position.top_right, 3, 7, border_width = 1)
 
 cardCell(int col, int row, string txt, color bg = na, string align = text.align_center) =>
     table.cell(card, col, row, txt, text_color = chart.fg_color, text_size = tSize, text_halign = align, bgcolor = na(bg) ? cellBg : bg)
@@ -442,3 +650,19 @@ if barstate.islast and mtfOn
     cardRow(3, mtf3, m3F, m3M, m3C, m3A)
     cardRow(4, mtf4, m4F, m4M, m4C, m4A)
     cardRow(5, mtf5, m5F, m5M, m5C, m5A)
+    // The score of the last closed bar: while the last bar is forming, the previous bar's.
+    int lastScore = barstate.isconfirmed ? score : score[1]
+    cardCell(0, 6, "Score", hdrBg, text.align_left)
+    cardCell(1, 6, fmtScore(lastScore) + " / 7", lastScore >= minScore ? upBg : lastScore <= -minScore ? dnBg : na)
+    cardCell(2, 6, "signal at " + str.tostring(minScore))
+
+// ───────────────────────── Alerts ─────────────────────────
+// The conditions are set on closed bars only, so each fires once, at the bar's close.
+alertcondition(buySig, "BUY", "BUY on {{ticker}} {{interval}}: the confluence score reached the minimum on a closed bar.")
+alertcondition(sellSig, "SELL", "SELL on {{ticker}} {{interval}}: the confluence score reached minus the minimum on a closed bar.")
+alertcondition(buyConf, "BUY confirmed", "BUY confirmed on {{ticker}} {{interval}}: a close above the signal bar's high inside the safeguard window.")
+alertcondition(sellConf, "SELL confirmed", "SELL confirmed on {{ticker}} {{interval}}: a close below the signal bar's low inside the safeguard window.")
+
+if barstate.isconfirmed and (alertMode == "Every bar close" or buySig or sellSig or buyConf or sellConf)
+    string evt = buySig ? "BUY" : sellSig ? "SELL" : buyConf ? "BUY confirmed" : sellConf ? "SELL confirmed" : "bar close"
+    alert(ticker.standard(syminfo.tickerid) + " " + timeframe.period + " | " + evt + " | score " + fmtScore(score) + "/7 | " + votesShort(), alert.freq_once_per_bar_close)
