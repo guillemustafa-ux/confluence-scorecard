@@ -79,7 +79,7 @@ srCol = input.color(color.gray, "Line color", group = gSr)
 
 htfIn = input.timeframe("", "Higher timeframe", group = gHtf, tooltip = "Used by S/R #2 and by vote 2. Empty = automatic: a chart up to 15 minutes uses 60, up to 60 minutes 240, below 1 day D, below 1 week W, below 1 month M, otherwise 12M. Ignored unless it is above the chart timeframe.")
 
-mtfOn = input.bool(true, "Show trend card", group = gMtf, tooltip = "Per timeframe, from its last completed bar: Up when the fast EMA is above the mid EMA and the close is above the mid EMA, Down in the mirror case, Flat otherwise; then the ADX. Rows below the chart timeframe are not computed.")
+mtfOn = input.bool(true, "Show trend card", group = gMtf, tooltip = "Per timeframe, from its last completed bar: Up when the fast EMA is above the mid EMA and the close is above the mid EMA, Down in the mirror case, Flat otherwise; then the ADX. Rows below the chart timeframe are requested but read 'below chart'.")
 mtf1 = input.timeframe("15", "Row 1", group = gMtf)
 mtf2 = input.timeframe("60", "Row 2", group = gMtf)
 mtf3 = input.timeframe("240", "Row 3", group = gMtf)
@@ -119,7 +119,7 @@ tp1Atr = input.float(1.0, "TP1 x ATR", minval = 0.01, step = 0.1, inline = "atr1
 tp2Atr = input.float(2.0, "TP2 x ATR", minval = 0.01, step = 0.1, inline = "atr1", group = gTp)
 tp3Atr = input.float(3.0, "TP3 x ATR", minval = 0.01, step = 0.1, inline = "atr2", group = gTp)
 slAtr = input.float(1.5, "Stop x ATR", minval = 0.01, step = 0.1, inline = "atr2", group = gTp)
-horizon = input.int(50, "Horizon H (bars)", minval = 1, maxval = 200, group = gTp, tooltip = "A trade that has reached neither the stop nor TP3 after H bars ends as a timeout on that bar.")
+horizon = input.int(50, "Horizon H (bars)", minval = 1, maxval = 100, group = gTp, tooltip = "A trade that has reached neither the stop nor TP3 after H bars ends as a timeout on that bar. At most 100: the base rate keeps up to 2 x H trades open and steps all of them on every closed bar.")
 tpLinesOn = input.bool(true, "Draw levels", group = gTp, tooltip = "Entry, TP1-TP3 and stop lines from the entry bar until the stop, TP3, the next opposite BUY or SELL signal or the horizon, whichever comes first, with a mark on the bar that reaches each level while the trade is drawn.")
 tpKeep = input.int(20, "Trades drawn", minval = 1, maxval = 30, group = gTp, tooltip = "Only the last N trades keep their lines and marks. The scorecard counts every trade either way.")
 
@@ -335,7 +335,10 @@ var array<Level> sr2Lo = array.new<Level>()
 
 string srLr = str.tostring(srLeft) + "/" + str.tostring(srRight)
 
-// Chart timeframe: on every closed bar, breaks first, then the pivots that bar confirms.
+// Chart timeframe: on every closed bar, breaks first, then the pivots that bar confirms. A new level starts
+// unbroken with the role that matches price: the confirming bar is the last of the srRight bars that stay
+// below a pivot high (above a pivot low), so its close cannot be beyond the level. The same holds for S/R #2
+// with the close of the confirming higher-timeframe bar.
 if barstate.isconfirmed and sr1On
     checkBreaks(sr1Hi, close)
     checkBreaks(sr1Lo, close)
@@ -1023,9 +1026,8 @@ if barstate.islast and scOn
     baseRow(5, "Base rate, long, every bar", bNL, array.get(bTp1, 0), array.get(bStop, 0), array.get(bTime, 0), array.get(bAmb, 0))
     baseRow(6, "Base rate, short, every bar", bNS, array.get(bTp1, 1), array.get(bStop, 1), array.get(bTime, 1), array.get(bAmb, 1))
     scCell(0, 7, "Closed bars only. A trade ends at the stop, TP3 or after the horizon; a stop and a target inside one bar count as a stop (ambiguous). Not counted yet: " + str.tostring(array.size(openTrades)) + " open signal trades, " + str.tostring(array.size(blBarL) + array.size(blBarS)) + " open base-rate trades. Not advice.", hdrBg, text.align_left)
-    for c = 1 to 10
-        scCell(c, 0, "", hdrBg)
-        scCell(c, 7, "", hdrBg)
+    // Only the start cell of a merged row is written: table.merge_cells() merges cells whose properties are
+    // not defined yet, and a merged cell is modified through its start_column:start_row coordinates.
     if not scMerged
         table.merge_cells(sc, 0, 0, 10, 0)
         table.merge_cells(sc, 0, 7, 10, 7)
