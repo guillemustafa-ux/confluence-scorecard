@@ -12,14 +12,14 @@ WHAT IS ORIGINAL HERE
 Confluence tools stack indicators and print signals, but agreeing indicators say nothing about whether the next move reaches a target. Three choices make this one checkable. First, nothing waits on a forming bar: votes are read, and signals, dots, candle colors and levels are set, only at the close, and every higher-timeframe value comes from the last completed bar of that timeframe (expression offset by one bar, lookahead on). Swing levels are drawn back at their pivot, and their tooltips say how many bars later they were confirmed. Second, every BUY or SELL label lists its seven votes by name and value in its tooltip, so a signal can be read, not just trusted. Third, the scorecard compares the signals with a base rate: the same TP1, stop and horizon applied to every closed bar, long and short. Long, short and all signals each get a TP1 rate with a Wilson 95% interval, the edge over the base rate in points, and the verdict "evidence" only when the lower bound of the interval clears the base rate. The components are combined because the engine needs them: the moving averages, the ADX, the Fibonacci swing and the higher timeframe feed four of the votes, and the layers put those inputs on the chart.
 
 HOW IT IS MEASURED
-- Entry: the close of the signal bar, or of the confirmation bar with the optional safeguard (a later close beyond the signal bar's high or low within 3 bars).
+- Entry: the close of the signal bar, or of the confirmation bar with the optional safeguard (a close beyond the signal bar's high or low within 3 bars while the score still reaches the minimum minus one).
 - Levels: a percent of the entry (targets 1, 2 and 3%, stop 1.5%) or ATR multiples.
 - Each bar after the entry: an open beyond the stop is a stop; targets reached by the open count first; a stop and a further target inside one bar count as a stop and are tallied as ambiguous; after H bars (50) the trade times out.
 - Base rate: one long and one short entry at every closed bar after the warm-up, TP1 only, same rules.
 - Counters move on closed bars only; open trades are not counted. Before costs.
 
 HOW TO USE IT
-1. Keep the defaults first and read N: under about 30 trades in a row the verdict will read "no evidence".
+1. Keep the defaults first and read N: under about 30 trades per row the interval is wide, and the verdict usually reads "no evidence" unless the gap to the base rate is large.
 2. Compare each signal row's TP1 with the base-rate row of the same side, then read "Edge vs base".
 3. Hover a label to see which votes made the signal.
 4. Change one setting at a time (minimum score, safeguard, ATR mode) and watch whether the edge holds. Trying settings until one reads "evidence" is a search the interval does not account for.
@@ -33,7 +33,7 @@ Footer: open trades not counted yet.
 LIMITATIONS
 - The volume profile spreads each bar's volume over its range: an approximation from OHLCV bars, not tick data.
 - Swing levels appear 10 bars after their pivot (10 higher-timeframe bars on the higher timeframe); RSI divergences 5 bars after theirs.
-- Percent targets depend on the asset and the timeframe; the ATR mode scales them to volatility.
+- Percent targets depend on the asset and the timeframe; the ATR mode scales them.
 - Consecutive base-rate trades share bars and signals can overlap, so the interval is optimistic when signals cluster.
 - No fills, spread, commission or slippage. Only loaded bars count. Use standard candles. Counts, not a trading rule. Not financial advice.
 
