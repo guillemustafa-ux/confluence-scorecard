@@ -995,6 +995,13 @@ scPos = switch scPosIn
 // columns.
 var table sc = table.new(scPos, 11, 7, border_width = 1)
 
+// The title row is merged exactly once, on the first bar, where the table is created. That bar is historical, so
+// no realtime rollback can undo the merge or bring back a flag that would merge it again (merging cells that are
+// already merged is an error). table.merge_cells() can merge cells before their properties are set with
+// table.cell(). With the scorecard off, nothing is merged and no cell is written, so nothing shows.
+if barstate.isfirst and scOn
+    table.merge_cells(sc, 0, 0, 10, 0)
+
 scCell(int col, int row, string txt, color bg = na, string align = text.align_center) =>
     table.cell(sc, col, row, txt, text_color = chart.fg_color, text_size = tSize, text_halign = align, bgcolor = na(bg) ? cellBg : bg)
 
@@ -1057,9 +1064,6 @@ baseRow(int row, string name, int n, int t1, int st, int tm, int am) =>
     scCell(9, row, "")
     scCell(10, row, "")
 
-// The title row is merged once: merging cells that are already merged on every realtime tick is avoided.
-var bool scMerged = false
-
 if barstate.islast and scOn
     int nL = array.get(sN, 0)
     int nS = array.get(sN, 1)
@@ -1089,11 +1093,8 @@ if barstate.islast and scOn
     sigRow(4, "All signals", nL + nS, array.get(sTp1, 0) + array.get(sTp1, 1), array.get(sTp2, 0) + array.get(sTp2, 1), array.get(sTp3, 0) + array.get(sTp3, 1), array.get(sStop, 0) + array.get(sStop, 1), array.get(sTime, 0) + array.get(sTime, 1), array.get(sAmb, 0) + array.get(sAmb, 1), baseAll)
     baseRow(5, "Base rate, long, every bar", bNL, array.get(bTp1, 0), array.get(bStop, 0), array.get(bTime, 0), array.get(bAmb, 0))
     baseRow(6, "Base rate, short, every bar", bNS, array.get(bTp1, 1), array.get(bStop, 1), array.get(bTime, 1), array.get(bAmb, 1))
-    // Only the start cell of the merged title row is written: table.merge_cells() merges cells whose properties
-    // are not defined yet, and a merged cell is modified through its start_column:start_row coordinates.
-    if not scMerged
-        table.merge_cells(sc, 0, 0, 10, 0)
-        scMerged := true
+    // Only the start cell of the merged title row is written: a merged cell is modified through its
+    // start_column:start_row coordinates.
 
 // ───────────────────────── Alerts ─────────────────────────
 // The conditions are set on closed bars only, so each fires once, at the bar's close.
