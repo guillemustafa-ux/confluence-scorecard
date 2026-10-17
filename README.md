@@ -160,7 +160,7 @@ The histogram on the forming bar moves with price until the bar closes, like any
 
 1. Read N first. Under about 30 trades per row the interval is wide, and the verdict usually reads "no evidence" unless the gap to the base rate is large, in either direction.
 2. Compare the TP1 column with the base-rate row of the same side. The base rate is how often TP1 comes before the stop from any bar on this chart; with TP1 at 1 ATR and the stop at 1.5 ATR it is often above 50%, because the target is closer.
-3. Read "Edge vs base": the difference in points. An edge of either sign with "no evidence" means the difference is inside the noise of N trades. "worse" is a result too: on that chart the signals pick entries that reach TP1 before the stop less often than random entries do.
+3. Read "Edge vs base": the difference in points. An edge of either sign with "no evidence" means the difference is inside the noise of N trades. "worse" is a result too: on that chart the signals pick entries that reach TP1 before the stop less often than an entry on every bar does.
 4. Read the Ambiguous column. Ambiguous stops are bars where the order of the stop and a target cannot be known from OHLC; they are counted against both the signals and the base rate. When they are a large share of the stops, the levels are too tight for the timeframe.
 5. Change one thing at a time (minimum score, safeguard, TP mode) and watch whether the edge holds. Changing settings until the verdict reads "better" is a search over many tries; the 95% interval does not account for it.
 
