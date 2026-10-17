@@ -34,7 +34,6 @@ const string gSafe = "Safeguard"
 const string gTp = "Take profits and stop"
 const string gCard = "Scorecard"
 const string gAlert = "Alerts"
-const string gDisp = "Display"
 
 ma1On = input.bool(true, "MA 1", inline = "ma1", group = gMa)
 ma1Type = input.string("EMA", "", options = ["EMA", "SMA", "WMA", "RMA", "HMA", "VWMA"], inline = "ma1", group = gMa)
@@ -76,6 +75,7 @@ srLeft = input.int(10, "Pivot left bars", minval = 1, maxval = 50, group = gSr)
 srRight = input.int(10, "Pivot right bars", minval = 1, maxval = 50, group = gSr, tooltip = "A swing high or low confirms this many bars after its bar. The level is drawn back from the pivot bar on the bar that confirms it, and its dot's tooltip says so.")
 srRoleCol = input.bool(false, "Color by role", group = gSr, tooltip = "Off: every level in the line color. On: support in teal, resistance in red.")
 srCol = input.color(color.gray, "Line color", group = gSr)
+srMaxAtr = input.float(5.0, "Show levels within (ATR)", minval = 0, step = 0.5, group = gSr, tooltip = "Display only, on the last bar: a level farther than this many ATR(14) from the last close is not drawn. Its price, role and breaks are kept and checked as usual, and it is drawn again from its pivot when price comes back within range. 0 = no filter.")
 
 htfIn = input.timeframe("", "Higher timeframe", group = gHtf, tooltip = "Used by S/R #2 and by vote 2. Empty = automatic: a chart up to 15 minutes uses 60, up to 60 minutes 240, below 1 day D, below 1 week W, below 1 month M, otherwise 12M. Ignored unless it is above the chart timeframe.")
 
@@ -124,20 +124,25 @@ tpLinesOn = input.bool(true, "Draw levels", group = gTp, tooltip = "Entry, TP1-T
 tpKeep = input.int(20, "Trades drawn", minval = 1, maxval = 30, group = gTp, tooltip = "Only the last N trades keep their lines and marks. The scorecard counts every trade either way.")
 
 scOn = input.bool(true, "Show scorecard", group = gCard)
+scPosIn = input.string("Bottom right", "Position", options = ["Top left", "Top center", "Top right", "Middle left", "Middle center", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gCard)
+textSize = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal"], group = gCard, tooltip = "Applies to the scorecard and to the trend card.")
 
 alertMode = input.string("Signals only", "alert() calls", options = ["Signals only", "Every bar close"], group = gAlert, tooltip = "For an alert set on 'Any alert() function call'. Signals only: on the closed bars with a BUY, a SELL or a safeguard confirmation. Every bar close: on every closed bar. Each message carries the score and the seven votes.")
-
-textSize = input.string("Small", "Table text size", options = ["Tiny", "Small", "Normal"], group = gDisp)
 
 // ───────────────────────── Types ─────────────────────────
 // A swing support or resistance level. role: 1 = support (price above it), -1 = resistance (price below it).
 // breaks: closed bars that closed through it; the first flips the role, the second removes the level. note
-// is the first part of the dot's tooltip and says when the pivot was confirmed.
+// is the first part of the dot's tooltip and says when the pivot was confirmed. x, xl and lineStyle say where
+// and how to draw it: x is the pivot bar's open time, xl is xloc.bar_time. ln and lb are na while the distance
+// filter hides the level.
 type Level
     float price
     int role
     int breaks = 0
     string note
+    int x
+    string xl
+    string lineStyle
     line ln
     label lb
 
@@ -288,21 +293,37 @@ levelTip(Level lv) =>
     string state = lv.breaks == 0 ? (lv.role == 1 ? "Support. A close below it flips it to resistance." : "Resistance. A close above it flips it to support.") : lv.role == 1 ? "Support since a close above it. A close below it removes it." : "Resistance since a close below it. A close above it removes it."
     lv.note + "\n" + state
 
-// Adds a level at price from bar x (a bar index or a time, per xl) and keeps at most maxN levels in arr: the
-// oldest beyond that is deleted.
+// Draws a level: a line from its pivot bar extended right, and a small dot in the line's color on the pivot that
+// carries the tooltip.
+drawLevel(Level lv) =>
+    color col = levelColor(lv.role)
+    lv.ln := line.new(lv.x, lv.price, lv.x + 1, lv.price, xloc = lv.xl, extend = extend.right, color = col, style = lv.lineStyle, width = 1)
+    lv.lb := label.new(lv.x, lv.price, "•", xloc = lv.xl, style = label.style_none, textcolor = col, size = size.tiny, tooltip = levelTip(lv))
+
+// Deletes the drawings of a level, when it has them, and keeps its data. Ends with a void call, so callers can
+// use it as the last statement of an if branch.
+eraseLevel(Level lv) =>
+    if not na(lv.ln)
+        line oldLn = lv.ln
+        label oldLb = lv.lb
+        lv.ln := na
+        lv.lb := na
+        line.delete(oldLn)
+        label.delete(oldLb)
+
+// Adds a level at price from bar x and keeps at most maxN levels in arr: the oldest beyond that is deleted. Both
+// sets pass the pivot bar's open time with xloc.bar_time, so a level redrawn on the last bar never needs a bar
+// index far beyond the history buffers.
 addLevel(array<Level> arr, int maxN, float price, int role, int x, string xl, string lineStyle, string note) =>
-    color col = levelColor(role)
-    Level lv = Level.new(price = price, role = role, note = note)
-    lv.ln := line.new(x, price, x + 1, price, xloc = xl, extend = extend.right, color = col, style = lineStyle, width = 1)
-    lv.lb := label.new(x, price, "", xloc = xl, style = label.style_circle, color = col, size = size.tiny, tooltip = levelTip(lv))
+    Level lv = Level.new(price = price, role = role, note = note, x = x, xl = xl, lineStyle = lineStyle)
+    drawLevel(lv)
     array.push(arr, lv)
     if array.size(arr) > maxN
-        Level old = array.shift(arr)
-        line.delete(old.ln)
-        label.delete(old.lb)
+        eraseLevel(array.shift(arr))
 
 // Applies one closed bar with close c to every level of arr: a close beyond a level breaks it. The first break
-// flips the role, the second removes the level. The loop runs backwards because it removes elements.
+// flips the role, the second removes the level. The loop runs backwards because it removes elements. A level
+// hidden by the distance filter is broken, flipped and removed the same way; only its drawings are absent.
 checkBreaks(array<Level> arr, float c) =>
     int n = array.size(arr)
     if n > 0 and not na(c)
@@ -310,17 +331,18 @@ checkBreaks(array<Level> arr, float c) =>
             Level lv = array.get(arr, i)
             if (lv.role == -1 and c > lv.price) or (lv.role == 1 and c < lv.price)
                 lv.breaks += 1
-                // Both branches end with a void call, so the if, the function's last statement, has one type.
+                // Both branches end with a void call or a void if, so the if, the function's last statement,
+                // has one type.
                 if lv.breaks >= 2
                     array.remove(arr, i)
-                    line.delete(lv.ln)
-                    label.delete(lv.lb)
+                    eraseLevel(lv)
                 else
                     lv.role := -lv.role
-                    color col = levelColor(lv.role)
-                    line.set_color(lv.ln, col)
-                    label.set_color(lv.lb, col)
-                    label.set_tooltip(lv.lb, levelTip(lv))
+                    if not na(lv.ln)
+                        color col = levelColor(lv.role)
+                        line.set_color(lv.ln, col)
+                        label.set_textcolor(lv.lb, col)
+                        label.set_tooltip(lv.lb, levelTip(lv))
 
 // A swing high or low confirms srRight bars after its bar: its price is high[srRight] or low[srRight].
 float srPh = ta.pivothigh(high, srLeft, srRight)
@@ -344,9 +366,9 @@ if barstate.isconfirmed and sr1On
     checkBreaks(sr1Lo, close)
     string confTxt = ", confirmed " + str.tostring(srRight) + " bars after its bar, when the bar of " + fmtTime(time) + " closed."
     if not na(srPh)
-        addLevel(sr1Hi, 8, srPh, -1, bar_index - srRight, xloc.bar_index, line.style_solid, "Swing high " + str.tostring(srPh, format.mintick) + " (pivot " + srLr + ")" + confTxt)
+        addLevel(sr1Hi, 8, srPh, -1, time[srRight], xloc.bar_time, line.style_solid, "Swing high " + str.tostring(srPh, format.mintick) + " (pivot " + srLr + ")" + confTxt)
     if not na(srPl)
-        addLevel(sr1Lo, 8, srPl, 1, bar_index - srRight, xloc.bar_index, line.style_solid, "Swing low " + str.tostring(srPl, format.mintick) + " (pivot " + srLr + ")" + confTxt)
+        addLevel(sr1Lo, 8, srPl, 1, time[srRight], xloc.bar_time, line.style_solid, "Swing low " + str.tostring(srPl, format.mintick) + " (pivot " + srLr + ")" + confTxt)
 
 // Higher timeframe: once per completed higher-timeframe bar, on the first closed chart bar after it, with that
 // bar's close for the breaks.
@@ -358,6 +380,33 @@ if barstate.isconfirmed and sr2On and htfOk and htfNew
         addLevel(sr2Hi, 4, hPh, -1, hPivTime, xloc.bar_time, line.style_dashed, htf + " swing high " + str.tostring(hPh, format.mintick) + " (pivot " + srLr + ")" + confTxt)
     if not na(hPl)
         addLevel(sr2Lo, 4, hPl, 1, hPivTime, xloc.bar_time, line.style_dashed, htf + " swing low " + str.tostring(hPl, format.mintick) + " (pivot " + srLr + ")" + confTxt)
+
+// Distance filter, a display choice made on the last bar only: a level farther than srMaxAtr x ATR(14) from the
+// last close is not drawn, and it is drawn again from its pivot when price comes back within range. Its price,
+// role and breaks above are untouched. Levels are not votes, so the signals and the scorecard do not depend on
+// this filter. While the last bar is forming, the close and the ATR are read one bar back, so the choice changes
+// only when a bar closes.
+float srAtr = ta.atr(14)
+
+showLevels(array<Level> arr, float ref, float maxDist) =>
+    int n = array.size(arr)
+    if n > 0
+        for i = 0 to n - 1
+            Level lv = array.get(arr, i)
+            bool near = na(maxDist) or maxDist <= 0 or math.abs(lv.price - ref) <= maxDist
+            if not near
+                eraseLevel(lv)
+            if near and na(lv.ln)
+                drawLevel(lv)
+
+if barstate.islast
+    int offS = barstate.isconfirmed ? 0 : 1
+    float refClose = close[offS]
+    float maxDist = srMaxAtr * srAtr[offS]
+    showLevels(sr1Hi, refClose, maxDist)
+    showLevels(sr1Lo, refClose, maxDist)
+    showLevels(sr2Hi, refClose, maxDist)
+    showLevels(sr2Lo, refClose, maxDist)
 
 // ───────────────────────── Trend card data ─────────────────────────
 // Per row, from the last completed bar of that timeframe: fast EMA, mid EMA, close and ADX, each offset by one
@@ -789,7 +838,9 @@ if barstate.islast
     int off = barstate.isconfirmed ? 0 : 1
 
     // Auto Fibonacci: the swing runs from the older of the two extremes to the more recent one, and level r sits
-    // at end - r x (end - start). The 0.5 and 0.786 lines bound the band that vote 7 reads.
+    // at end - r x (end - start). The 0.5 and 0.786 lines bound the band that vote 7 reads. Each label sits at the
+    // left end of its line, on the start bar of the swing, so the space right of the last bar is left to the
+    // volume profile.
     for ln in fibLines
         line.delete(ln)
     array.clear(fibLines)
@@ -815,7 +866,7 @@ if barstate.islast
             float y = endP - r * (endP - startP)
             color c = r == 0.5 or r == 0.786 ? fibBandCol : color.new(color.gray, 30)
             array.push(fibLines, line.new(startBar, y, bar_index, y, extend = extend.right, color = c, style = line.style_dotted))
-            array.push(fibLabels, label.new(bar_index + 3, y, str.tostring(r, "0.###") + "  " + str.tostring(y, format.mintick), style = label.style_label_left, color = color.new(color.black, 100), textcolor = c, size = size.small, tooltip = fibTip))
+            array.push(fibLabels, label.new(startBar, y, str.tostring(r, "0.###") + "  " + str.tostring(y, format.mintick), style = label.style_label_right, color = color.new(color.black, 100), textcolor = c, size = size.small, textalign = text.align_right, tooltip = fibTip))
 
     // Volume profile over the last vpBars closed bars: a bar's volume goes to the rows its high-low range
     // overlaps, in proportion to the overlap; a bar with no range puts it in the row of its close. The point of
@@ -898,7 +949,7 @@ cardCell(int col, int row, string txt, color bg = na, string align = text.align_
     table.cell(card, col, row, txt, text_color = chart.fg_color, text_size = tSize, text_halign = align, bgcolor = na(bg) ? cellBg : bg)
 
 // One card row: the timeframe, its trend from its last completed bar, and its ADX. A timeframe below the
-// chart's is not computed.
+// chart's is requested but reads "below chart".
 cardRow(int row, string tfIn, float f, float m, float c, float a) =>
     string tf = tfIn == "" ? timeframe.period : tfIn
     cardCell(0, row, tf, na, text.align_left)
@@ -929,9 +980,21 @@ if barstate.islast and mtfOn
 // ───────────────────────── Scorecard ─────────────────────────
 goodBg = color.from_gradient(0.40, 0.0, 1.0, chart.bg_color, color.green)
 
-// Eleven columns: the row names and ten values. Eight rows: header, column titles, three signal rows, two
-// base-rate rows, footer.
-var table sc = table.new(position.bottom_right, 11, 8, border_width = 1)
+scPos = switch scPosIn
+    "Top left" => position.top_left
+    "Top center" => position.top_center
+    "Top right" => position.top_right
+    "Middle left" => position.middle_left
+    "Middle center" => position.middle_center
+    "Middle right" => position.middle_right
+    "Bottom left" => position.bottom_left
+    "Bottom center" => position.bottom_center
+    => position.bottom_right
+
+// Eleven columns: the row names and ten values. Seven rows: a short title, column titles, three signal rows and
+// two base-rate rows. The details and the counting rules sit in the title's tooltip, so no long text widens the
+// columns.
+var table sc = table.new(scPos, 11, 7, border_width = 1)
 
 scCell(int col, int row, string txt, color bg = na, string align = text.align_center) =>
     table.cell(sc, col, row, txt, text_color = chart.fg_color, text_size = tSize, text_halign = align, bgcolor = na(bg) ? cellBg : bg)
@@ -995,7 +1058,7 @@ baseRow(int row, string name, int n, int t1, int st, int tm, int am) =>
     scCell(9, row, "")
     scCell(10, row, "")
 
-// Merged rows are merged once: merging cells that are already merged on every realtime tick is avoided.
+// The title row is merged once: merging cells that are already merged on every realtime tick is avoided.
 var bool scMerged = false
 
 if barstate.islast and scOn
@@ -1008,7 +1071,9 @@ if barstate.islast and scOn
     // All signals are compared with the base rate weighted by their own mix of longs and shorts.
     float baseAll = nL + nS > 0 and not na(baseL) and not na(baseS) ? (nL * baseL + nS * baseS) / (nL + nS) : float(na)
     string levelsTxt = tpMode == "Percent" ? "TP " + str.tostring(tp1Pct, "0.##") + "/" + str.tostring(tp2Pct, "0.##") + "/" + str.tostring(tp3Pct, "0.##") + "%, stop " + str.tostring(slPct, "0.##") + "%" : "TP " + str.tostring(tp1Atr, "0.##") + "/" + str.tostring(tp2Atr, "0.##") + "/" + str.tostring(tp3Atr, "0.##") + " x ATR " + str.tostring(atrLen) + ", stop " + str.tostring(slAtr, "0.##") + " x ATR"
-    scCell(0, 0, "Scorecard · " + ticker.standard(syminfo.tickerid) + " · " + timeframe.period + " · " + levelsTxt + " · horizon " + str.tostring(horizon) + " bars · " + (sgOn ? "safeguard on, confirmed signals only · " : "") + "before costs", hdrBg, text.align_left)
+    // A short title; hover it for the settings, the counting rules and the trades not counted yet.
+    string scTip = ticker.standard(syminfo.tickerid) + " · " + timeframe.period + " · " + levelsTxt + " · horizon " + str.tostring(horizon) + " bars" + (sgOn ? " · safeguard on, confirmed signals only" : "") + ".\nClosed bars only. A trade ends at the stop, TP3 or after the horizon; a stop and a target inside one bar count as a stop (ambiguous). Results are before costs.\nNot counted yet: " + str.tostring(array.size(openTrades)) + " open signal trades, " + str.tostring(array.size(blBarL) + array.size(blBarS)) + " open base-rate trades. Not advice."
+    table.cell(sc, 0, 0, "Scorecard · before costs" + (sgOn ? " · safeguard on" : ""), text_color = chart.fg_color, text_size = tSize, text_halign = text.align_left, bgcolor = hdrBg, tooltip = scTip)
     scCell(0, 1, "", hdrBg)
     scCell(1, 1, "N", hdrBg)
     scCell(2, 1, "TP1", hdrBg)
@@ -1025,12 +1090,10 @@ if barstate.islast and scOn
     sigRow(4, "All signals", nL + nS, array.get(sTp1, 0) + array.get(sTp1, 1), array.get(sTp2, 0) + array.get(sTp2, 1), array.get(sTp3, 0) + array.get(sTp3, 1), array.get(sStop, 0) + array.get(sStop, 1), array.get(sTime, 0) + array.get(sTime, 1), array.get(sAmb, 0) + array.get(sAmb, 1), baseAll)
     baseRow(5, "Base rate, long, every bar", bNL, array.get(bTp1, 0), array.get(bStop, 0), array.get(bTime, 0), array.get(bAmb, 0))
     baseRow(6, "Base rate, short, every bar", bNS, array.get(bTp1, 1), array.get(bStop, 1), array.get(bTime, 1), array.get(bAmb, 1))
-    scCell(0, 7, "Closed bars only. A trade ends at the stop, TP3 or after the horizon; a stop and a target inside one bar count as a stop (ambiguous). Not counted yet: " + str.tostring(array.size(openTrades)) + " open signal trades, " + str.tostring(array.size(blBarL) + array.size(blBarS)) + " open base-rate trades. Not advice.", hdrBg, text.align_left)
-    // Only the start cell of a merged row is written: table.merge_cells() merges cells whose properties are
-    // not defined yet, and a merged cell is modified through its start_column:start_row coordinates.
+    // Only the start cell of the merged title row is written: table.merge_cells() merges cells whose properties
+    // are not defined yet, and a merged cell is modified through its start_column:start_row coordinates.
     if not scMerged
         table.merge_cells(sc, 0, 0, 10, 0)
-        table.merge_cells(sc, 0, 7, 10, 7)
         scMerged := true
 
 // ───────────────────────── Alerts ─────────────────────────

@@ -6,7 +6,7 @@ Description to paste as is (between the rules):
 
 ---
 WHAT IT DOES
-An all-in-one confluence overlay with a built-in test of its own signals. Seven votes, each +1, 0 or -1, are read at the close of every bar: EMA stack, higher-timeframe trend, ADX with the leading DI, squeeze momentum, above-average volume signed by the candle, a recent regular RSI divergence, and the close inside the 0.5-0.786 retracement band of the current swing. Their sum is the score, from -7 to +7. BUY prints when the score reaches the minimum (4 by default) from below, SELL when it reaches minus the minimum from above. Each signal (each confirmed one, with the optional safeguard on) opens a hypothetical trade with three targets and a stop, and a scorecard counts how often each level came first. Context layers, each with its own switch: four moving averages, a Bollinger area, trend candles, ADX dots, auto Fibonacci, floor pivots, swing support and resistance on the chart and on a higher timeframe with role reversal, a multi-timeframe trend card and a volume profile.
+An all-in-one confluence overlay with a built-in test of its own signals. Seven votes, each +1, 0 or -1, are read at the close of every bar: EMA stack, higher-timeframe trend, ADX with the leading DI, squeeze momentum, above-average volume signed by the candle, a recent regular RSI divergence, and the close inside the 0.5-0.786 retracement band of the current swing. Their sum is the score, from -7 to +7. BUY prints when the score reaches the minimum (4 by default) from below, SELL when it reaches minus the minimum from above. Each signal (each confirmed one, with the optional safeguard on) opens a hypothetical trade with three targets and a stop, and a scorecard counts how often each level came first. Context layers, each with its own switch: four moving averages, a Bollinger area, trend candles, ADX dots, auto Fibonacci, floor pivots, swing support and resistance on the chart and on a higher timeframe with role reversal (drawn within 5 ATR of price), a multi-timeframe trend card and a volume profile.
 
 WHAT IS ORIGINAL HERE
 Confluence tools stack indicators and print signals, but agreeing indicators say nothing about whether the next move reaches a target. Three choices make this one checkable. First, nothing waits on a forming bar: votes are read, and signals, dots, candle colors and levels are set, only at the close, and every higher-timeframe value comes from the last completed bar of that timeframe (expression offset by one bar, lookahead on). Swing levels are drawn back at their pivot, and their tooltips say how many bars later they were confirmed. Second, every BUY or SELL label lists its seven votes by name and value in its tooltip, so a signal can be read, not just trusted. Third, the scorecard compares the signals with a base rate: the same TP1, stop and horizon applied to every closed bar, long and short. Long, short and all signals each get a TP1 rate with a Wilson 95% interval, the edge over the base rate in points, and the verdict "evidence" only when the lower bound of the interval clears the base rate. The components are combined because the engine needs them: the moving averages, the ADX, the Fibonacci swing and the higher timeframe feed four of the votes, and the layers put those inputs on the chart.
@@ -25,10 +25,9 @@ HOW TO USE IT
 4. Change one setting at a time (minimum score, safeguard, ATR mode) and watch whether the edge holds. Trying settings until one reads "evidence" is a search the interval does not account for.
 
 HOW TO READ THE TABLE
-Header: symbol, timeframe, levels, horizon, safeguard, before costs.
+Title: hover it for the settings, the counting rules and the open trades.
 Long, short and all signals: N, TP1, TP2 and TP3 reached before the stop, Stop, Timeouts, Ambiguous, TP1 95% CI, Edge vs base, Verdict.
 Base rate, long and short: the same columns for TP1 only.
-Footer: open trades not counted yet.
 
 LIMITATIONS
 - The volume profile spreads each bar's volume over its range: an approximation from OHLCV bars, not tick data.

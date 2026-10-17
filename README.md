@@ -46,7 +46,7 @@ Details:
 
 A signal becomes pending. It is confirmed by the first closed bar among the next M bars (default 3) that closes above the signal bar's high (BUY) or below its low (SELL) while the score is still at or above minimum - 1 (BUY) or at or below -(minimum - 1) (SELL). With labels shown, a small check mark appears on the confirmation bar. A pending signal lapses after M bars, and a new BUY or SELL replaces it. The signal label's tooltip gets one more line with the outcome: confirmed n bars later, not confirmed within M bars, or replaced by the next signal.
 
-With the safeguard on, a trade opens only at the close of a confirmation bar, a signal that is not confirmed opens no trade, and the scorecard's header says "safeguard on, confirmed signals only".
+With the safeguard on, a trade opens only at the close of a confirmation bar, a signal that is not confirmed opens no trade, and the scorecard's title adds "safeguard on" (its tooltip says "safeguard on, confirmed signals only").
 
 ## Trades
 
@@ -62,11 +62,11 @@ With the safeguard on, a trade opens only at the close of a confirmation bar, a 
 
 ## Scorecard
 
-Bottom right. One header row, one row of column titles, three signal rows, two base-rate rows and a footer.
+Bottom right by default (the Position input offers the nine table positions). A short title row ("Scorecard · before costs"), one row of column titles, three signal rows and two base-rate rows. Hover the title for the symbol, the timeframe, the levels, the horizon, the safeguard state, the counting rules and the trades not counted yet; that text lives in the tooltip so that no long line widens the columns.
 
 | Column | Meaning |
 | --- | --- |
-| N | Trades that have ended: at the stop, at TP3 or by timeout. Open trades are not counted; the footer gives their number. |
+| N | Trades that have ended: at the stop, at TP3 or by timeout. Open trades are not counted; the title's tooltip gives their number. |
 | TP1, TP2, TP3 | Share of N that reached the target before the stop. A trade that reached TP1 and was stopped later counts in TP1 and in Stop. |
 | Stop | Share of N that ended at the stop. |
 | Timeouts | Number of trades that ended by the horizon. |
@@ -100,11 +100,12 @@ Identities that must hold on any chart (rates rounded to one decimal):
 | Bollinger area | Filled band between `SMA(close, 20) - 2 x stdev(close, 20)` and `SMA(close, 20) + 2 x stdev(close, 20)`. | off |
 | Trend candles | Bull color (teal) when the fast EMA is above the mid EMA and the close is above the mid EMA, bear color (red) in the mirror case, gray otherwise. Full color when the ADX is at or above the threshold, 60% transparent below it. Colored once the bar has closed; the forming bar keeps the chart's own colors. | on, ADX 14/14, threshold 25 |
 | ADX dots | On the closed bar where the ADX is at or above the threshold and the previous bar's ADX was below it: a teal dot under the bar when +DI > -DI, a red dot over the bar when -DI > +DI, no dot when they are equal. | on |
-| Auto Fibonacci | The swing of vote 7 over the last 144 closed bars. Level r sits at `end - r x (end - start)`, where end is the more recent extreme: 0, 0.236, 0.382, 0.5, 0.618, 0.786 and 1, plus 1.272 and 1.618 beyond the start when enabled. Dotted lines from the start of the swing, extended right, with a label per level; the 0.5 and 0.786 lines are orange because they bound vote 7's band. The label tooltip names the two bars of the swing. | on, 144, extensions off |
+| Auto Fibonacci | The swing of vote 7 over the last 144 closed bars. Level r sits at `end - r x (end - start)`, where end is the more recent extreme: 0, 0.236, 0.382, 0.5, 0.618, 0.786 and 1, plus 1.272 and 1.618 beyond the start when enabled. Dotted lines from the start of the swing, extended right, with a label per level (ratio and price) at the left end of its line, on the start bar of the swing, so the space right of the last bar stays free for the volume profile; the 0.5 and 0.786 lines are orange because they bound vote 7's band. The label tooltip names the two bars of the swing. | on, 144, extensions off |
 | Floor pivots | `P = (H + L + C) / 3`, `R1 = 2P - L`, `S1 = 2P - H`, `R2 = P + (H - L)`, `S2 = P - (H - L)`, `R3 = H + 2 (P - L)`, `S3 = L - 2 (H - P)`, from the high, low and close of the previous completed bar of the pivot timeframe. The lines break on the bar where P changes, so that bar has no point. Hidden unless the pivot timeframe is above the chart timeframe. | off, D |
-| S/R #1 | Swing pivots `ta.pivothigh(high, 10, 10)` and `ta.pivotlow(low, 10, 10)` on the chart timeframe. A pivot high becomes a resistance and a pivot low a support: a line from the pivot bar extended right, created on the bar that confirms the pivot, 10 bars later. It starts unbroken, and that role always matches price at birth: the confirming bar is the last of the 10 bars whose highs stay at or below the pivot high (lows at or above the pivot low), so its close cannot be beyond the level. Breaks are checked from the next closed bar on: a close above a resistance flips it to support and a close below a support flips it to resistance; a second break removes the level. At most 8 levels born from pivot highs and 8 from pivot lows; the oldest beyond that is deleted. A dot at the pivot carries the tooltip: price, pivot lengths, "confirmed 10 bars after its bar" and the time of the confirming bar, then the current role. | on, gray |
+| S/R #1 | Swing pivots `ta.pivothigh(high, 10, 10)` and `ta.pivotlow(low, 10, 10)` on the chart timeframe. A pivot high becomes a resistance and a pivot low a support: a line from the pivot bar extended right, created on the bar that confirms the pivot, 10 bars later. It starts unbroken, and that role always matches price at birth: the confirming bar is the last of the 10 bars whose highs stay at or below the pivot high (lows at or above the pivot low), so its close cannot be beyond the level. Breaks are checked from the next closed bar on: a close above a resistance flips it to support and a close below a support flips it to resistance; a second break removes the level. At most 8 levels born from pivot highs and 8 from pivot lows; the oldest beyond that is deleted. A small dot in the line's color at the pivot carries the tooltip: price, pivot lengths, "confirmed 10 bars after its bar" and the time of the confirming bar, then the current role. The distance filter below decides which of these levels are drawn. | on, gray |
 | S/R #2 | The same rule on the higher timeframe: pivots computed on its bars, breaks checked with the close of each completed higher-timeframe bar, once per completed bar, on the first closed chart bar after it. A new level starts unbroken for the same reason: the close of the higher-timeframe bar that confirms it cannot be beyond it. Its breaks are checked from the next completed higher-timeframe bar on. At most 4 levels from pivot highs and 4 from pivot lows, dashed. Not drawn unless the higher timeframe is above the chart timeframe. | on, automatic timeframe |
 | Color by role | Off: every level in the line color. On: supports teal, resistances red. | off |
+| Distance filter | Both S/R sets, evaluated on the last bar only: a level farther than 5 x ATR(14) from the last close (the previous bar's close and ATR while the last bar is forming) is not drawn; its line and dot are deleted. Its price, role and breaks are kept and checked as usual, and it is drawn again from its pivot when price comes back within range. 0 turns the filter off, and every level is drawn while the ATR has no value. A display choice only: levels are not votes, so the signals and the scorecard do not depend on it. Far levels extending right otherwise stretch the chart's price scale (observed on an XAUUSD 1 hour chart). | 5.0 |
 | Trend card | Top right. Per row timeframe, from its last completed bar: Up when the fast EMA is above the mid EMA and the close is above the mid EMA, Down in the mirror case, Flat otherwise; then the ADX with "strong" (at or above the threshold) or "weak". A row below the chart timeframe reads "below chart". The last row is the score of the last closed bar. | on, 15, 60, 240, D, W |
 | Volume profile | Over the last 200 closed bars: 30 rows between the lowest low and the highest high; each bar's volume is spread over the rows its high-low range overlaps, in proportion to the overlap; a bar with no range puts its volume in the row of its close. Boxes to the right of the last bar, the longest 40 bars long. The point of control (POC) is the row with the most volume, with a line from the first bar of the range to the right edge of the profile. The value area starts at the POC and adds the neighboring row with more volume, one row at a time, until it holds 70% of the total; its rows are shaded. Nothing is drawn when the symbol reports no volume. | on, 200, 30, 40, value area on |
 
@@ -133,7 +134,7 @@ The histogram on the forming bar moves with price until the bar closes, like any
 
 - Plots of the forming bar move with price until it closes, like any plot: the moving averages, the Bollinger area and the oscillator histogram. Their values never change after the close.
 - Signals, trades, ADX dots, candle colors, S/R levels, safeguard marks, divergence marks, squeeze dots and the scorecard's counts are created or updated on closed bars only.
-- A drawing made on a closed bar stays as drawn, with these exceptions, all made on later closed bars by the rules above: a level flips role or is removed after a break; a signal label's tooltip gains the safeguard outcome; trade lines extend until the trade ends or the next opposite signal; drawings beyond the kept counts are deleted; the auto Fibonacci and the volume profile are redrawn when a bar closes.
+- A drawing made on a closed bar stays as drawn, with these exceptions, all made on later closed bars by the rules above: a level flips role or is removed after a break; a level beyond the distance filter is not drawn, and is drawn again when price comes back within range; a signal label's tooltip gains the safeguard outcome; trade lines extend until the trade ends or the next opposite signal; drawings beyond the kept counts are deleted; the auto Fibonacci and the volume profile are redrawn when a bar closes.
 - All seven `request.security` calls (the floor pivots, the higher-timeframe values behind vote 2 and S/R #2, and the five trend card rows) request `expression[1]` with `lookahead = barmerge.lookahead_on`: the last completed bar of that timeframe, on historical and realtime bars alike.
 
 ## Settings
@@ -145,16 +146,15 @@ The histogram on the forming bar moves with price until the bar closes, like any
 | Trend candles and ADX | Trend candles, ADX dots, DI length, ADX smoothing, ADX threshold | on, on, 14, 14, 25 |
 | Auto Fibonacci | Show, lookback (2 to 499 bars), 1.272 and 1.618 | on, 144, off |
 | Floor pivots | Show, pivot timeframe | off, D |
-| Support and resistance | S/R #1, S/R #2, pivot left bars, pivot right bars, color by role, line color | on, on, 10, 10, off, gray |
+| Support and resistance | S/R #1, S/R #2, pivot left bars, pivot right bars, color by role, line color, show levels within (ATR) | on, on, 10, 10, off, gray, 5.0 |
 | Higher timeframe | Timeframe | empty (automatic) |
 | Trend card | Show, rows 1 to 5 | on, 15, 60, 240, D, W |
 | Volume profile | Show, bars (10 to 499), rows, width, value area | on, 200, 30, 40, on |
 | Signal engine | Minimum score (1 to 7), alternate signals, labels, labels kept, squeeze length, volume length, volume multiple, RSI length, RSI pivot left and right, min and max bars between RSI pivots, divergence window | 4, on, on, 100, 20, 20, 1.2, 14, 5, 5, 5, 60, 10 |
 | Safeguard | Use safeguard, confirmation window | off, 3 |
 | Take profits and stop | Mode, TP1 / TP2 / TP3 / stop in %, ATR length, TP1 / TP2 / TP3 / stop in ATR, horizon H (1 to 100), draw levels, trades drawn (1 to 30) | Percent, 1 / 2 / 3 / 1.5, 14, 1 / 2 / 3 / 1.5, 50, on, 20 |
-| Scorecard | Show | on |
+| Scorecard | Show, position, text size (also used by the trend card) | on, Bottom right, Small |
 | Alerts | alert() calls | Signals only |
-| Display | Table text size | Small |
 
 ## How to read the scorecard
 
@@ -171,7 +171,7 @@ The histogram on the forming bar moves with price until the bar closes, like any
 3. Hover a signal label: the votes must add up to the score in the label, and the score must be at or above the minimum (BUY) or at or below minus the minimum (SELL). The trend card's last row must equal the score of the last closed bar.
 4. Control: set TP1 to 0.01%. TP1 must read close to 100% in every signal and base-rate row (a trade can still be stopped by an open beyond the stop, or by a bar that reaches the stop and TP1 together). Set it back to 1.
 5. Control: set the minimum score to 7. Signals become rare or disappear, N falls, and the base-rate rows do not change. Set it back to 4.
-6. Control: turn the safeguard on. N usually falls, since unconfirmed signals open no trade; the header says "safeguard on"; and each check mark sits 1 to 3 bars after a signal label of the same side.
+6. Control: turn the safeguard on. N usually falls, since unconfirmed signals open no trade; the title says "safeguard on"; and each check mark sits 1 to 3 bars after a signal label of the same side.
 7. Non-repainting: open Bar Replay, step forward bar by bar across a few signals, and compare with the chart before replay: labels, dots, candle colors and levels must appear on the same bars with the same tooltips.
 8. Hand check one S/R level: hover its dot, go to the pivot bar it names, count 10 bars to the right, and confirm that bar's time matches the tooltip.
 
@@ -186,7 +186,7 @@ The histogram on the forming bar moves with price until the bar closes, like any
 - **The votes overlap.** The EMA stack, the higher-timeframe trend and the ADX all measure trend in related ways. The score counts agreements; it is not a probability.
 - **Execution time.** The base rate keeps up to 2 x H trades open and steps all of them on every closed bar, so a deeper horizon multiplies that loop. The horizon is capped at 100 bars; near the cap, on a long history, the script can still reach TradingView's total execution-time limit.
 - **History depth.** Only loaded bars count, so history depth, symbol and timeframe change every number.
-- **Drawing limits.** Only the last 100 signal labels (150 at most), 20 trade drawings (30 at most), 8 + 8 and 4 + 4 levels and 50 divergence marks stay on the chart; the scorecard counts every trade either way.
+- **Drawing limits.** Only the last 100 signal labels (150 at most), 20 trade drawings (30 at most), 8 + 8 and 4 + 4 levels (drawn only within the distance filter) and 50 divergence marks stay on the chart; the scorecard counts every trade either way.
 - **Standard candles only.** Heikin Ashi, Renko and other synthetic bars change the open, high, low and close every rule reads.
 - **Not compiled outside TradingView.** Compile both scripts in the Pine Editor before relying on them.
 - It reports counts and context, not a trading rule. Not financial advice.
@@ -208,6 +208,8 @@ What the Pine Script v6 reference and user manual say about the built-ins the sc
 - Request limits: "Scripts can perform up to 40 unique requests using any combination of `request.*()` function calls, or up to 64 if the user has the Ultimate plan." The overlay makes 7 unique calls. "All the `request.*()` function calls in a script taken together cannot return more than 127 tuple elements"; the overlay returns 30.
 - Drawings: "A script can display a maximum of 500 lines, 500 boxes, 500 polylines, and 500 labels on a chart at any given time", and when a script exceeds its limit "the runtime system _deletes_ the _oldest_ drawings of that type". The overlay deletes its own oldest drawings first and keeps at most 423 labels (150 signal labels, 150 check marks, 90 trade marks, 24 level dots, 9 Fibonacci labels), 184 lines and 100 boxes, below the 500 limit, so the runtime does not have to delete a live level.
 - Future bars: "A maximum of 500 bars in the future can be referenced." The profile reaches at most 202 bars ahead.
+- Tables (manual, Tables page, read on 2026-10-16): "The tooltip parameter accepts a “string” value that defines the tooltip text for the cell", and a cell width of 0, the default, "specifies that the width automatically adjusts based on the cell’s text". The scorecard keeps its long text in the title's tooltip for that reason.
+- Support and resistance levels are drawn with `xloc.bar_time` from the pivot bar's open time, so a level redrawn on the last bar by the distance filter never needs a bar index beyond the 500-bar buffers.
 - Loops: "The execution time for any loop on any single bar is limited to 500 milliseconds." Total execution: "The limit is 20 seconds for basic accounts, 40 for others."
 - `max_bars_back(var, num)`: the runtime sizes buffers on historical bars, but "The system does not continue to resize buffers on realtime bars", and the reference example also sizes `time` because "drawing calculations convert bar indices to `time` values internally".
 - Plot counts: "A maximum of 64 plot counts are allowed per script", and `alertcondition()`, `barcolor()` and `plotshape()` count. The overlay uses about 20 and the oscillator about 9.
