@@ -109,7 +109,7 @@ divWindow = input.int(10, "Divergence window (vote 6)", minval = 1, maxval = 100
 sgOn = input.bool(false, "Use safeguard", group = gSafe, tooltip = "A signal is confirmed by the first closed bar among the next N bars that closes above the signal bar's high (BUY) or below its low (SELL) while the score still reaches minimum score - 1 in the signal's direction. When on, the take profits, the stop and the scorecard start at the confirmation close, and a signal that is not confirmed opens no trade.")
 sgBars = input.int(3, "Confirmation window (bars)", minval = 1, maxval = 50, group = gSafe)
 
-tpMode = input.string("Percent", "Mode", options = ["Percent", "ATR multiple"], group = gTp, tooltip = "Distances from the entry, which is the close of the signal bar, or of the confirmation bar with the safeguard on. Percent: a share of the entry. ATR multiple: multiples of ta.atr(length) on the entry bar. Keep TP1 < TP2 < TP3.")
+tpMode = input.string("ATR multiple", "Mode", options = ["Percent", "ATR multiple"], group = gTp, tooltip = "Distances from the entry, which is the close of the signal bar, or of the confirmation bar with the safeguard on. ATR multiple (default): multiples of ta.atr(length) on the entry bar, so the levels scale with the timeframe and the asset. Percent: a share of the entry, the same on every timeframe. Keep TP1 < TP2 < TP3.")
 tp1Pct = input.float(1.0, "TP1 %", minval = 0.01, maxval = 50, step = 0.1, inline = "pct1", group = gTp)
 tp2Pct = input.float(2.0, "TP2 %", minval = 0.01, maxval = 50, step = 0.1, inline = "pct1", group = gTp)
 tp3Pct = input.float(3.0, "TP3 %", minval = 0.01, maxval = 50, step = 0.1, inline = "pct2", group = gTp)

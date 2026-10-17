@@ -13,7 +13,7 @@ Confluence tools stack indicators and print signals, but agreeing indicators say
 
 HOW IT IS MEASURED
 - Entry: the close of the signal bar, or of the confirmation bar with the optional safeguard (a close beyond the signal bar's high or low within 3 bars while the score still reaches the minimum minus one).
-- Levels: a percent of the entry (targets 1, 2 and 3%, stop 1.5%) or ATR multiples.
+- Levels: ATR multiples by default (targets 1, 2 and 3 x ATR(14), stop 1.5 x ATR) or a percent of the entry.
 - Each bar after the entry: an open beyond the stop is a stop; targets reached by the open count first; a stop and a further target inside one bar count as a stop and are tallied as ambiguous; after H bars (50) the trade times out.
 - Base rate: one long and one short entry at every closed bar after the warm-up, TP1 only, same rules.
 - Counters move on closed bars only; open trades are not counted. Before costs.
@@ -32,7 +32,7 @@ Base rate, long and short: the same columns for TP1 only.
 LIMITATIONS
 - The volume profile spreads each bar's volume over its range: an approximation from OHLCV bars, not tick data.
 - Swing levels appear 10 bars after their pivot (10 higher-timeframe bars on the higher timeframe); RSI divergences 5 bars after theirs.
-- Percent targets depend on the asset and the timeframe; the ATR mode scales them.
+- In Percent mode the targets depend on the asset and the timeframe; the default ATR mode scales them.
 - Consecutive base-rate trades share bars and signals can overlap, so the interval is optimistic when signals cluster.
 - No fills, spread, commission or slippage. Only loaded bars count. Use standard candles. Counts, not a trading rule. Not financial advice.
 
@@ -46,7 +46,7 @@ The chart shows BINANCE:BTCUSDT on the 1 hour timeframe with the default setting
 - [ ] Set the chart: BINANCE:BTCUSDT, 1 hour, default inputs, scorecard and trend card visible.
 - [ ] Check the identities: in each signal row TP3 + Stop + Timeouts / N = 100% up to rounding, and TP1 >= TP2 >= TP3; in each base-rate row TP1 + Stop + Timeouts / N = 100%; All N = Long N + Short N; Ambiguous never above the number of stops.
 - [ ] Hover three signal labels: the seven votes add up to the score in the label.
-- [ ] Control: set TP1 to 0.01%. TP1 must read close to 100% in every row. Set it back to 1.
+- [ ] Control: set TP1 x ATR to 0.01. TP1 must read close to 100% in every row. Set it back to 1.
 - [ ] Control: set the minimum score to 7. Signals become rare; the base-rate rows do not change. Set it back to 4.
 - [ ] Bar Replay across a few signals: labels, dots, candle colors and levels appear on the same bars as before the replay.
 - [ ] The description publishes only the overlay. The oscillator is a second script: publish it separately, or leave it out of the publication.

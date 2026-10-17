@@ -51,7 +51,7 @@ With the safeguard on, a trade opens only at the close of a confirmation bar, a 
 ## Trades
 
 - **Entry.** The close of the signal bar, or of the confirmation bar with the safeguard on.
-- **Levels.** Percent mode (default): TPk = entry x (1 + pk / 100) and stop = entry x (1 - s / 100) for a long, mirrored for a short; defaults TP1 1.0%, TP2 2.0%, TP3 3.0%, stop 1.5%. ATR mode: TPk = entry + mk x ATR and stop = entry - s x ATR for a long, mirrored for a short, with `ta.atr(14)` read on the entry bar; defaults 1, 2, 3 and stop 1.5. Keep TP1 < TP2 < TP3.
+- **Levels.** ATR mode (default): TPk = entry + mk x ATR and stop = entry - s x ATR for a long, mirrored for a short, with `ta.atr(14)` read on the entry bar; defaults 1, 2, 3 and stop 1.5. Percent mode: TPk = entry x (1 + pk / 100) and stop = entry x (1 - s / 100) for a long, mirrored for a short; its inputs default to TP1 1.0%, TP2 2.0%, TP3 3.0%, stop 1.5%. Keep TP1 < TP2 < TP3. ATR is the default because percent levels do not scale across timeframes: on BINANCE:BTCUSDT 1 minute every signal trade timed out before reaching 1% or 1.5% (and 26,762 of 27,331 base-rate trades), while on 1 day 5 of 9 signal trades ended on a bar that held both a target and the stop.
 - **Order on each closed bar**, starting with the bar after the entry:
   1. An open at or beyond the stop: the trade ends at the stop.
   2. Targets the open already reached are credited, since the open is the bar's first price; TP3 ends the trade.
@@ -152,14 +152,14 @@ The histogram on the forming bar moves with price until the bar closes, like any
 | Volume profile | Show, bars (10 to 499), rows, width, value area | on, 200, 30, 40, on |
 | Signal engine | Minimum score (1 to 7), alternate signals, labels, labels kept, squeeze length, volume length, volume multiple, RSI length, RSI pivot left and right, min and max bars between RSI pivots, divergence window | 4, on, on, 100, 20, 20, 1.2, 14, 5, 5, 5, 60, 10 |
 | Safeguard | Use safeguard, confirmation window | off, 3 |
-| Take profits and stop | Mode, TP1 / TP2 / TP3 / stop in %, ATR length, TP1 / TP2 / TP3 / stop in ATR, horizon H (1 to 100), draw levels, trades drawn (1 to 30) | Percent, 1 / 2 / 3 / 1.5, 14, 1 / 2 / 3 / 1.5, 50, on, 20 |
+| Take profits and stop | Mode, TP1 / TP2 / TP3 / stop in %, ATR length, TP1 / TP2 / TP3 / stop in ATR, horizon H (1 to 100), draw levels, trades drawn (1 to 30) | ATR multiple, 1 / 2 / 3 / 1.5, 14, 1 / 2 / 3 / 1.5, 50, on, 20 |
 | Scorecard | Show, position (eight of the nine table positions; top right is left to the trend card), text size (also used by the trend card) | on, Bottom right, Small |
 | Alerts | alert() calls | Signals only |
 
 ## How to read the scorecard
 
 1. Read N first. Under about 30 trades per row the interval is wide, and the verdict usually reads "no evidence" unless the gap to the base rate is large.
-2. Compare the TP1 column with the base-rate row of the same side. The base rate is how often TP1 comes before the stop from any bar on this chart; with a 1% target and a 1.5% stop it is often above 50%, because the target is closer.
+2. Compare the TP1 column with the base-rate row of the same side. The base rate is how often TP1 comes before the stop from any bar on this chart; with TP1 at 1 ATR and the stop at 1.5 ATR it is often above 50%, because the target is closer.
 3. Read "Edge vs base": the difference in points. A positive edge with "no evidence" means the difference is inside the noise of N trades.
 4. Read the Ambiguous column. Ambiguous stops are bars where the order of the stop and a target cannot be known from OHLC; they are counted against both the signals and the base rate. When they are a large share of the stops, the levels are too tight for the timeframe.
 5. Change one thing at a time (minimum score, safeguard, TP mode) and watch whether the edge holds. Changing settings until the verdict reads "evidence" is a search over many tries; the 95% interval does not account for it.
@@ -169,7 +169,7 @@ The histogram on the forming bar moves with price until the bar closes, like any
 1. Add both scripts to BINANCE:BTCUSDT on 1 hour from the Pine Editor and confirm they compile without errors or warnings.
 2. Check the identities of the scorecard (see Scorecard).
 3. Hover a signal label: the votes must add up to the score in the label, and the score must be at or above the minimum (BUY) or at or below minus the minimum (SELL). The trend card's last row must equal the score of the last closed bar.
-4. Control: set TP1 to 0.01%. TP1 must read close to 100% in every signal and base-rate row (a trade can still be stopped by an open beyond the stop, or by a bar that reaches the stop and TP1 together). Set it back to 1.
+4. Control: set TP1 x ATR to 0.01. TP1 must read close to 100% in every signal and base-rate row (a trade can still be stopped by an open beyond the stop, or by a bar that reaches the stop and TP1 together). Set it back to 1.
 5. Control: set the minimum score to 7. Signals become rare or disappear, N falls, and the base-rate rows do not change. Set it back to 4.
 6. Control: turn the safeguard on. N usually falls, since unconfirmed signals open no trade; the title says "safeguard on"; and each check mark sits 1 to 3 bars after a signal label of the same side.
 7. Non-repainting: open Bar Replay, step forward bar by bar across a few signals, and compare with the chart before replay: labels, dots, candle colors and levels must appear on the same bars with the same tooltips.
@@ -180,7 +180,7 @@ The histogram on the forming bar moves with price until the bar closes, like any
 - **Volume profile.** It spreads each bar's volume evenly over its high-low range. It is an approximation from OHLCV bars, not tick or footprint data, and it differs from a tick-based profile.
 - **Pivot lag.** S/R #1 levels appear 10 bars after their pivot, S/R #2 levels 10 higher-timeframe bars after theirs, RSI and momentum divergences 5 bars after theirs. They are drawn back at the pivot, but nothing could have acted on them before the confirmation bar; the tooltips give that bar.
 - **Before costs.** No spread, commission, slippage or funding. A small positive edge can disappear after costs.
-- **Percent targets depend on the asset and the timeframe.** 1% is a large move on a forex hourly chart and a small one on a volatile crypto daily chart. The ATR mode scales the levels to recent volatility.
+- **In Percent mode the targets depend on the asset and the timeframe.** 1% is a large move on a forex hourly chart and a small one on a volatile crypto daily chart. The ATR mode, the default, scales the levels to recent volatility; it still assumes the last 14 bars' range is a fair guide to the next H bars.
 - **Base-rate definition.** Every closed bar after the warm-up is an entry on both sides, so consecutive base-rate trades share most of their bars and are not independent. The signals' own trades can overlap too, and the Wilson interval treats them as independent, which makes it narrower than it should be when signals cluster.
 - **Ambiguous bars count as stops.** This is conservative for the signals and the base rate alike; it can lower both TP1 rates on low timeframes or with tight levels.
 - **The votes overlap.** The EMA stack, the higher-timeframe trend and the ADX all measure trend in related ways. The score counts agreements; it is not a probability.
