@@ -62,7 +62,7 @@ With the safeguard on, a trade opens only at the close of a confirmation bar, a 
 
 ## Scorecard
 
-Bottom right by default (the Position input offers the nine table positions). A short title row ("Scorecard · before costs"), one row of column titles, three signal rows and two base-rate rows. Hover the title for the symbol, the timeframe, the levels, the horizon, the safeguard state, the counting rules and the trades not counted yet; that text lives in the tooltip so that no long line widens the columns.
+Bottom right by default (the Position input offers eight table positions; top right is left out because the trend card sits there). A short title row ("Scorecard · before costs"), one row of column titles, three signal rows and two base-rate rows. Hover the title for the symbol, the timeframe, the levels, the horizon, the safeguard state, the counting rules and the trades not counted yet; that text lives in the tooltip so that no long line widens the columns.
 
 | Column | Meaning |
 | --- | --- |
@@ -153,7 +153,7 @@ The histogram on the forming bar moves with price until the bar closes, like any
 | Signal engine | Minimum score (1 to 7), alternate signals, labels, labels kept, squeeze length, volume length, volume multiple, RSI length, RSI pivot left and right, min and max bars between RSI pivots, divergence window | 4, on, on, 100, 20, 20, 1.2, 14, 5, 5, 5, 60, 10 |
 | Safeguard | Use safeguard, confirmation window | off, 3 |
 | Take profits and stop | Mode, TP1 / TP2 / TP3 / stop in %, ATR length, TP1 / TP2 / TP3 / stop in ATR, horizon H (1 to 100), draw levels, trades drawn (1 to 30) | Percent, 1 / 2 / 3 / 1.5, 14, 1 / 2 / 3 / 1.5, 50, on, 20 |
-| Scorecard | Show, position, text size (also used by the trend card) | on, Bottom right, Small |
+| Scorecard | Show, position (eight of the nine table positions; top right is left to the trend card), text size (also used by the trend card) | on, Bottom right, Small |
 | Alerts | alert() calls | Signals only |
 
 ## How to read the scorecard

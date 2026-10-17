@@ -124,7 +124,7 @@ tpLinesOn = input.bool(true, "Draw levels", group = gTp, tooltip = "Entry, TP1-T
 tpKeep = input.int(20, "Trades drawn", minval = 1, maxval = 30, group = gTp, tooltip = "Only the last N trades keep their lines and marks. The scorecard counts every trade either way.")
 
 scOn = input.bool(true, "Show scorecard", group = gCard)
-scPosIn = input.string("Bottom right", "Position", options = ["Top left", "Top center", "Top right", "Middle left", "Middle center", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gCard)
+scPosIn = input.string("Bottom right", "Position", options = ["Top left", "Top center", "Middle left", "Middle center", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gCard, tooltip = "Top right is left out: the trend card sits there.")
 textSize = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal"], group = gCard, tooltip = "Applies to the scorecard and to the trend card.")
 
 alertMode = input.string("Signals only", "alert() calls", options = ["Signals only", "Every bar close"], group = gAlert, tooltip = "For an alert set on 'Any alert() function call'. Signals only: on the closed bars with a BUY, a SELL or a safeguard confirmation. Every bar close: on every closed bar. Each message carries the score and the seven votes.")
@@ -983,7 +983,6 @@ goodBg = color.from_gradient(0.40, 0.0, 1.0, chart.bg_color, color.green)
 scPos = switch scPosIn
     "Top left" => position.top_left
     "Top center" => position.top_center
-    "Top right" => position.top_right
     "Middle left" => position.middle_left
     "Middle center" => position.middle_center
     "Middle right" => position.middle_right
@@ -1095,6 +1094,9 @@ if barstate.islast and scOn
     if not scMerged
         table.merge_cells(sc, 0, 0, 10, 0)
         scMerged := true
+    // TEMPORARY diagnostic for the missing scorecard: one line per execution on the last bar in the Pine Logs
+    // panel. Remove once the cause is known.
+    log.info("scorecard diag: sc is na = {0}, tables on chart = {1}, position = {2}, text size = {3}, merged = {4}, long N = {5}, short N = {6}, base N = {7}/{8}", na(sc) ? "yes" : "no", array.size(table.all), scPos, tSize, scMerged ? "yes" : "no", nL, nS, bNL, bNS)
 
 // ───────────────────────── Alerts ─────────────────────────
 // The conditions are set on closed bars only, so each fires once, at the bar's close.
