@@ -1094,9 +1094,6 @@ if barstate.islast and scOn
     if not scMerged
         table.merge_cells(sc, 0, 0, 10, 0)
         scMerged := true
-    // TEMPORARY diagnostic for the missing scorecard: one line per execution on the last bar in the Pine Logs
-    // panel. Remove once the cause is known.
-    log.info("scorecard diag: sc is na = {0}, tables on chart = {1}, position = {2}, text size = {3}, merged = {4}, long N = {5}, short N = {6}, base N = {7}/{8}", na(sc) ? "yes" : "no", array.size(table.all), scPos, tSize, scMerged ? "yes" : "no", nL, nS, bNL, bNS)
 
 // ───────────────────────── Alerts ─────────────────────────
 // The conditions are set on closed bars only, so each fires once, at the bar's close.
