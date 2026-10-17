@@ -8,7 +8,7 @@ Not published on TradingView. The draft description is in `TRADINGVIEW_PUBLICATI
 
 1. **Closed bars only.** Signals, trades, ADX dots, candle colors, support and resistance levels and the scorecard's counts change only on closed bars, and the engine reads its votes only on closed bars. Every `request.security` call offsets its expression by one bar and uses `lookahead = barmerge.lookahead_on`, so for a timeframe at or above the chart's it returns the last completed bar and never a bar that is still forming (a row or a higher timeframe set below the chart's is requested but not used). A swing level is drawn back from its pivot bar on the bar that confirms it, and its dot's tooltip says how many bars later that was.
 2. **Every signal label shows its votes.** A signal label reads `BUY 5/7` or `SELL 5/7`, and its tooltip lists the seven votes by name and value, with the readings behind them (ADX and DI values, the volume ratio, how many bars ago a divergence confirmed).
-3. **A scorecard against a base rate.** For each signal the script follows a hypothetical trade: did TP1, TP2, TP3 or the stop come first within H bars? The TP1 rate, with a Wilson 95% interval, is compared with the same TP1, stop and horizon applied to every closed bar after the warm-up, as a long and as a short entry. The verdict reads "evidence" only when the lower bound of the interval is above that base rate. All results are before costs.
+3. **A scorecard against a base rate.** For each signal the script follows a hypothetical trade: did TP1, TP2, TP3 or the stop come first within H bars? The TP1 rate, with a Wilson 95% interval, is compared with the same TP1, stop and horizon applied to every closed bar after the warm-up, as a long and as a short entry. The verdict reads "better" only when the lower bound of the interval is above that base rate, "worse" only when the upper bound is below it, and "no evidence" otherwise. All results are before costs.
 
 The point of the scorecard: a confluence of indicators says that several readings agree, not that the next move is more likely to reach a target. The base rate answers "how often does this target come before this stop anyway, from any bar?", so the signals have to beat the chart they run on, not 50%.
 
@@ -73,7 +73,7 @@ Bottom right by default (the Position input offers eight table positions; top ri
 | Ambiguous | Number of stops on a bar that also reached a further target. They are part of Stop. |
 | TP1 95% CI | Wilson score interval for the TP1 rate. |
 | Edge vs base | TP1 rate minus the base rate, in percentage points. |
-| Verdict | "evidence" when N > 0 and the lower bound of the TP1 interval is above the base rate; "no evidence" otherwise, including N = 0. |
+| Verdict | "better" (green) when N > 0 and the lower bound of the TP1 interval is above the base rate; "worse" (red) when N > 0 and the upper bound is below it, meaning the signals reach TP1 before the stop less often than an entry on any bar; "no evidence" otherwise, including N = 0. |
 
 Rows:
 
@@ -158,11 +158,11 @@ The histogram on the forming bar moves with price until the bar closes, like any
 
 ## How to read the scorecard
 
-1. Read N first. Under about 30 trades per row the interval is wide, and the verdict usually reads "no evidence" unless the gap to the base rate is large.
+1. Read N first. Under about 30 trades per row the interval is wide, and the verdict usually reads "no evidence" unless the gap to the base rate is large, in either direction.
 2. Compare the TP1 column with the base-rate row of the same side. The base rate is how often TP1 comes before the stop from any bar on this chart; with TP1 at 1 ATR and the stop at 1.5 ATR it is often above 50%, because the target is closer.
-3. Read "Edge vs base": the difference in points. A positive edge with "no evidence" means the difference is inside the noise of N trades.
+3. Read "Edge vs base": the difference in points. An edge of either sign with "no evidence" means the difference is inside the noise of N trades. "worse" is a result too: on that chart the signals pick entries that reach TP1 before the stop less often than random entries do.
 4. Read the Ambiguous column. Ambiguous stops are bars where the order of the stop and a target cannot be known from OHLC; they are counted against both the signals and the base rate. When they are a large share of the stops, the levels are too tight for the timeframe.
-5. Change one thing at a time (minimum score, safeguard, TP mode) and watch whether the edge holds. Changing settings until the verdict reads "evidence" is a search over many tries; the 95% interval does not account for it.
+5. Change one thing at a time (minimum score, safeguard, TP mode) and watch whether the edge holds. Changing settings until the verdict reads "better" is a search over many tries; the 95% interval does not account for it.
 
 ## Check it yourself
 

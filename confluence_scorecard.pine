@@ -979,6 +979,7 @@ if barstate.islast and mtfOn
 
 // ───────────────────────── Scorecard ─────────────────────────
 goodBg = color.from_gradient(0.40, 0.0, 1.0, chart.bg_color, color.green)
+badBg = color.from_gradient(0.40, 0.0, 1.0, chart.bg_color, color.red)
 
 scPos = switch scPosIn
     "Top left" => position.top_left
@@ -1031,12 +1032,13 @@ wilson(int k, int n) =>
         hi := ctr + half
     [lo, hi]
 
-// One signal row. base is the base rate its TP1 rate is compared with: "evidence" only when the lower bound of
-// the TP1 interval is above it.
+// One signal row. base is the base rate its TP1 rate is compared with: "better" when the lower bound of the TP1
+// interval is above it, "worse" when the upper bound is below it, "no evidence" otherwise (also with N = 0).
 sigRow(int row, string name, int n, int t1, int t2, int t3, int st, int tm, int am, float base) =>
     [lo, hi] = wilson(t1, n)
     float p = n > 0 ? float(t1) / n : float(na)
-    bool ev = n > 0 and not na(base) and lo > base
+    bool better = n > 0 and not na(base) and lo > base
+    bool worse = n > 0 and not na(base) and hi < base
     scCell(0, row, name, na, text.align_left)
     scCell(1, row, str.tostring(n, "#,##0"))
     scCell(2, row, fmtShare(t1, n))
@@ -1047,7 +1049,7 @@ sigRow(int row, string name, int n, int t1, int t2, int t3, int st, int tm, int 
     scCell(7, row, str.tostring(am, "#,##0"))
     scCell(8, row, n > 0 ? fmtRate(lo) + " - " + fmtRate(hi) : "n/a")
     scCell(9, row, na(p) or na(base) ? "n/a" : fmtPts((p - base) * 100))
-    scCell(10, row, ev ? "evidence" : "no evidence", ev ? goodBg : na)
+    scCell(10, row, better ? "better" : worse ? "worse" : "no evidence", better ? goodBg : worse ? badBg : na)
 
 // One base-rate row: TP1 only, so the TP2, TP3, edge and verdict cells stay empty.
 baseRow(int row, string name, int n, int t1, int st, int tm, int am) =>
