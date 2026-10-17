@@ -13,7 +13,7 @@ Confluence tools stack indicators and print signals, but agreeing indicators say
 
 HOW IT IS MEASURED
 - Entry: the close of the signal bar, or of the confirmation bar with the optional safeguard (a close beyond the signal bar's high or low within 3 bars while the score still reaches the minimum minus one).
-- Levels: ATR multiples by default (targets 1, 2 and 3 x ATR(14), stop 1.5 x ATR) or a percent of the entry.
+- Levels: ATR multiples by default (1, 2 and 3 x ATR(14), stop 1.5) or a percent of the entry.
 - Each bar after the entry: an open beyond the stop is a stop; targets reached by the open count first; a stop and a further target inside one bar count as a stop and are tallied as ambiguous; after H bars (50) the trade times out.
 - Base rate: one long and one short entry at every closed bar after the warm-up, TP1 only, same rules.
 - Counters move on closed bars only; open trades are not counted. Before costs.
@@ -32,7 +32,7 @@ Base rate, long and short: the same columns for TP1 only.
 LIMITATIONS
 - The volume profile spreads each bar's volume over its range: an approximation from OHLCV bars, not tick data.
 - Swing levels appear 10 bars after their pivot (10 higher-timeframe bars on the higher timeframe); RSI divergences 5 bars after theirs.
-- In Percent mode the targets depend on the asset and the timeframe; the default ATR mode scales them.
+- Percent targets depend on the asset and timeframe; ATR mode scales them.
 - Consecutive base-rate trades share bars and signals can overlap, so the interval is optimistic when signals cluster.
 - No fills, spread, commission or slippage. Only loaded bars count. Use standard candles. Counts, not a trading rule. Not financial advice.
 
