@@ -196,7 +196,7 @@ The histogram on the forming bar moves with price until the bar closes, like any
 Some all-in-one indicators also offer the following. They are not here, for these reasons:
 
 - **Chart patterns** (triangles, flags, head and shoulders): no definition that can be stated as a rule and checked bar by bar has been published for this kind of tool, and a pattern drawn after the fact cannot be scored without look-ahead.
-- **Fibonacci clusters across timeframes**: no definition of what counts as a cluster (tolerance, which swings, which timeframes), so any choice would be invented and untestable against the original.
+- **Fibonacci clusters across timeframes**: no definition of what counts as a cluster (tolerance, which swings, which timeframes), so any choice would be invented and untestable.
 - **An EMA ribbon**: many EMAs add no vote that the EMA stack does not already give, and they cost plots.
 
 ## Pine API notes
