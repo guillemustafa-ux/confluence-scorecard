@@ -2,7 +2,7 @@
 
 Open-source TradingView indicator pair (Pine Script v6). The overlay combines moving averages, trend candles, ADX dots, an auto Fibonacci retracement, floor pivots, swing support and resistance on two timeframes, a multi-timeframe trend card and a volume profile with a seven-vote signal engine. Its BUY and SELL signals wait for the bar to close, show every vote behind them, and are graded in a built-in scorecard against the base rate of the same take-profit and stop rule applied to every closed bar after the warm-up. A companion pane shows squeeze momentum, the squeeze state and momentum divergences.
 
-Not published on TradingView. The draft description is in `TRADINGVIEW_PUBLICATION.md`.
+Published on TradingView as an open-source script (the overlay only): https://www.tradingview.com/script/oqAIpNH6-Confluence-Scorecard-Signals-Graded-Against-a-Base-Rate/
 
 ## What makes it different
 
@@ -225,7 +225,7 @@ What the Pine Script v6 reference and user manual say about the built-ins the sc
 
 - `confluence_scorecard.pine`: the overlay (engine, signals, trades, scorecard, context layers).
 - `confluence_scorecard_oscillator.pine`: the oscillator pane.
-- `TRADINGVIEW_PUBLICATION.md`: draft title, description and checklist. Not published.
+- `TRADINGVIEW_PUBLICATION.md`: the published title and description, and the publishing checklist.
 - `LICENSE`: MIT.
 
 ## License
