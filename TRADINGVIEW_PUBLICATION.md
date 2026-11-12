@@ -37,7 +37,7 @@ LIMITATIONS
 - Consecutive base-rate trades share bars and signals can overlap, so the interval is narrower than it should be when signals cluster.
 - No fills, spread, commission or slippage. Only loaded bars count. Use standard candles. Counts, not a trading rule. Not financial advice.
 
-The chart shows BINANCE:BTCUSDT on the 1 hour timeframe with the default settings (the Bollinger area and floor pivots are off by default): three EMAs, trend candles, ADX dots, Fibonacci lines, swing levels (solid: chart timeframe; dashed: higher timeframe) and the volume profile. The scorecard is in the bottom right, the trend card in the top right.
+The chart shows BINANCE:BTCUSDT on the 1 hour timeframe with the default settings (the Bollinger area and floor pivots are off by default): three EMAs, trend candles, ADX dots, Fibonacci lines, swing levels (solid: chart timeframe; dashed: higher timeframe), BUY and SELL labels with their entry, target and stop lines, and the volume profile. The scorecard is in the bottom right, the trend card in the top right.
 ---
 
 ## Publishing checklist
